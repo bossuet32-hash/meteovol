@@ -1,0 +1,18 @@
+name: Zones SIA / ZICAD
+on:
+  push:
+    paths: ["sources/**"]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 tools/build_zones.py
+      - run: |
+          git config user.name "meteovol-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A data/zones
+          git diff --cached --quiet || (git commit -m "Zones : nouveau cycle AIRAC" && git push)
