@@ -432,4 +432,5 @@ function drawMap(box, R, root) {
   new Ctl({ position: 'bottomleft' }).addTo(map);
   box.append(h('div', { class: 'crosshair', 'aria-hidden': 'true' }));
   setTimeout(() => map.invalidateSize(), 50);
+  if (window.ResizeObserver) new ResizeObserver(() => map && map.invalidateSize()).observe(box);
 }

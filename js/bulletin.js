@@ -109,6 +109,7 @@ async function radar(el, site) {
   fill(el, h('div', { class: 'map-wrap' }, box, lab), h('div', { class: 'row' }, play, h('span', { class: 'small muted' }, 'Précipitations des 2 dernières heures (RainViewer), animation 10 min')));
   radarMap = L.map(box, { zoomControl: true, attributionControl: true, maxZoom: 11, minZoom: 5 }).setView([site.lat, site.lon], 8);
   ignLayer().addTo(radarMap);
+  if (window.ResizeObserver) new ResizeObserver(() => radarMap && radarMap.invalidateSize()).observe(box);
   L.circleMarker([site.lat, site.lon], { radius: 6, color: '#000', weight: 3, fillColor: '#fff', fillOpacity: 1 }).addTo(radarMap);
   let rv;
   try { rv = (await fetchCached('https://api.rainviewer.com/public/weather-maps.json')).data; } catch { lab.textContent = 'Radar indisponible (pas de réseau)'; return; }
