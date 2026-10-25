@@ -283,13 +283,63 @@ export function volStyle(e, v, ground) {
 let map = null;
 const TAG = (e) => h('span', { class: `tag ${e.sev >= 3 && !e.above120 ? 'solid' : ''} r-${e.restriction}` }, e.above120 ? 'INFO' : LABEL[e.restriction] + (e.temp && e.restriction === 'PROHIBITED' ? ' si active' : ''));
 
+// ---------------------------------------------------------------- liste <-> carte
+let hl = null;              // surbrillance de la zone choisie
+const rowOf = new Map();    // id de zone -> ligne de la liste
+
+function geomLayers(g, st) {
+  return g.t === 'C' ? L.circle([g.c[1], g.c[0]], { radius: g.r, ...st }) : L.polygon(g.rings.map((r) => r.map((p) => [p[1], p[0]])), st);
+}
+function flashRow(id) {
+  const row = rowOf.get(id);
+  if (!row) return;
+  row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  row.classList.remove('flash'); void row.offsetWidth; row.classList.add('flash');
+}
+// Affiche une zone (ou un espace protégé / point OSM) sur la carte : contour en surbrillance, cadrage, bulle
+export function showOnMap(item) {
+  if (!map) return;
+  if (hl) { hl.remove(); hl = null; }
+  hl = L.layerGroup().addTo(map);
+  let bounds = null, at = null, html = '';
+  if (item.z) {
+    const e = item;
+    for (const v of e.z.vols || []) {
+      const casing = geomLayers(v.g, { color: '#fff', weight: 8, opacity: 0.9, fill: false, interactive: false }).addTo(hl);
+      geomLayers(v.g, { color: '#000', weight: 3.5, fill: true, fillColor: '#ffd400', fillOpacity: 0.1, interactive: false }).addTo(hl);
+      bounds = bounds ? bounds.extend(casing.getBounds()) : casing.getBounds();
+    }
+    const a = e.z.auth || {};
+    html = `<b>${zname(e.z).replace(/</g, '&lt;')}</b><br>${e.z.typeLabel || ''}${e.z.detail ? ' · ' + e.z.detail : ''}<br><b>${LABEL[e.restriction]}</b> · ${heightTxt(e)}<br><small>${(e.z.cond || '').replace(/</g, '&lt;')}<br>${(e.z.authShort || a.name || '').replace(/</g, '&lt;')}${a.phone ? ' · ' + a.phone : ''}</small>`;
+    at = e.inside ? [item.lat0, item.lon0] : null;
+  } else if (item.geom) {
+    const lay = geomLayers(item.geom, { color: '#000', weight: 3, fillColor: '#2e7d32', fillOpacity: 0.2, interactive: false }).addTo(hl);
+    bounds = lay.getBounds();
+    html = `<b>${item.name}</b><br>${item.label}`;
+  } else if (item.lat != null) {
+    L.circleMarker([item.lat, item.lon], { radius: 14, color: '#000', weight: 3, fill: false, interactive: false }).addTo(hl);
+    bounds = L.latLngBounds([[item.lat, item.lon], [item.lat, item.lon]]);
+    html = `<b>${item.label}</b>${item.name ? '<br>' + item.name : ''}`;
+  }
+  if (!bounds) return;
+  document.querySelector('.zones-map')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  map.fitBounds(bounds, { maxZoom: 15, animate: true, paddingTopLeft: [20, 140], paddingBottomRight: [20, 50] });
+  const pos = at && at[0] != null ? L.latLng(at[0], at[1]) : bounds.getCenter();
+  setTimeout(() => L.popup({ autoPan: true, autoPanPaddingTopLeft: [10, 10], maxWidth: 260, className: 'zpop' }).setLatLng(L.latLng(bounds.getNorth(), pos.lng)).setContent(html).openOn(map), 350);
+}
+
 function zoneRow(e, withDist) {
   const a = e.z.auth || {};
-  return h('div', { class: 'zrow' },
+  const row = h('div', { class: 'zrow click', role: 'button', tabindex: '0', title: 'Voir sur la carte',
+    onclick: (ev) => { if (ev.target.closest('a')) return; showOnMap(e); },
+    onkeydown: (ev) => { if (ev.key === 'Enter') showOnMap(e); } },
     withDist ? h('div', { class: 'zd' }, h('b', {}, fmtDist(e.dist)), h('div', { class: 'small muted' }, e.dir || '')) : null,
     h('div', { class: 'zn' }, h('b', {}, zname(e.z)), h('div', { class: 'small muted' }, (e.z.typeLabel || '') + (e.z.detail ? ' · ' + e.z.detail : ''))),
     h('div', { class: 'zt' }, TAG(e), h('div', { class: 'small' }, heightTxt(e))),
-    h('div', { class: 'zc small' }, e.z.cond || e.z.message || '', h('div', { class: 'muted' }, h('b', {}, e.z.authShort || a.name || ''), a.phone ? ' · ' + a.phone : '', a.email ? ' · ' + a.email : '')));
+    h('div', { class: 'zc small' }, e.z.cond || e.z.message || '', h('div', { class: 'muted' }, h('b', {}, e.z.authShort || a.name || ''), a.phone ? ' · ' + a.phone : '', a.email ? ' · ' + a.email : '')),
+    h('div', { class: 'zgo small' }, 'Voir sur la carte ›'));
+  rowOf.set(e.z.id, row);
+  return row;
 }
 
 export async function render(root) {
@@ -302,6 +352,8 @@ export async function render(root) {
   const B = bannerInfo(R);
   const mapBox = h('div', { class: 'map zones-map' });
   const l93 = toL93(site.lat, site.lon);
+  rowOf.clear(); hl = null;
+  R.list.forEach((e) => { e.lat0 = R.lat; e.lon0 = R.lon; });
   const inside = R.list.filter((e) => e.inside && !e.above120), near = R.list.filter((e) => !e.inside && !e.above120), info = R.list.filter((e) => e.above120);
   fill(root, 
     h('section', { class: `banner ${B.cls}` }, h('div', { class: 'ban-lab' }, B.lab), h('div', { class: 'ban-txt' }, h('b', {}, B.l1), h('div', { class: 'small' }, B.l2))),
@@ -309,20 +361,20 @@ export async function render(root) {
       h('div', { class: 'small muted' }, `${site.name} · ${site.lat.toFixed(5)}, ${site.lon.toFixed(5)} · L93 ${Math.round(l93.E)} / ${Math.round(l93.N)}`),
       h('button', { class: 'btn small', onclick: async () => { const p = await pickPlace('Lieu de vol'); if (p) { saveSettings({ zonesSite: p }); render(root); } } }, 'Lieu…')),
     h('div', { class: 'map-wrap' }, mapBox),
-    h('p', { class: 'small muted' }, 'Touchez une zone pour son détail · appui long ou « Analyser le centre » pour un autre point · rouge : interdit · orange : accord · bleu : conditions · violet : ZICAD · tireté : au-delà d\'une hauteur'),
+    h('p', { class: 'small muted' }, 'Touchez une zone de la carte ou de la liste pour la mettre en évidence · appui long ou « Analyser le centre » pour un autre point · rouge : interdit · orange : accord · bleu : conditions · violet : ZICAD · tireté : au-delà d\'une hauteur'),
     R.outdated ? h('p', { class: 'warn-txt' }, `Données SIA périmées (AIRAC ${R.meta.airac}, ${R.airac_age} jours) : mettre à jour le dossier data/zones.`) : null,
     h('section', { class: 'card' }, h('div', { class: 'lbl' }, `Au point de vol · ${inside.length} zone(s)`),
       inside.length ? inside.map((e) => zoneRow(e, false)) : h('p', {}, 'Aucune zone SIA / ZICAD au point de vol (sous 120 m).')),
     h('section', { class: 'card' }, h('div', { class: 'lbl' }, `À proximité (${S.radiusKm || 10} km) · ${near.length} zone(s)`),
       near.length ? near.map((e) => zoneRow(e, true)) : h('p', {}, 'Aucune autre zone dans le rayon.'),
-      info.length ? h('p', { class: 'small muted' }, 'Sans effet sous 120 m : ' + info.map((e) => `${zname(e.z)} (dès ${Math.round(e.floor)} m)`).join(' · ')) : null),
+      info.length ? h('p', { class: 'small muted' }, 'Sans effet sous 120 m : ', ...info.map((e) => h('button', { class: 'chip', onclick: () => showOnMap(e) }, `${zname(e.z)} (dès ${Math.round(e.floor)} m)`))) : null),
     h('section', { class: 'card' }, h('div', { class: 'lbl' }, 'NOTAM'),
       h('p', { class: 'small' }, 'Les restrictions temporaires ne sont pas intégrées : vérifier avant le vol sur ', h('a', { href: 'https://sofia-briefing.aviation-civile.gouv.fr/', target: '_blank', rel: 'noopener' }, 'SOFIA-Briefing'), ' pour la date et l\'heure du vol.')),
     h('section', { class: 'card' }, h('div', { class: 'lbl' }, `Vigilance OpenStreetMap · ${R.osm ? R.osm.length : '—'}`),
-      R.osm ? (R.osm.length ? h('ul', { class: 'plain' }, ...R.osm.slice(0, 12).map((o) => h('li', {}, h('b', {}, fmtDist(o.dist) + ' ' + (o.dir || '')), ' ', o.label, o.name ? ' · ' + o.name : '', o.icao ? ` (${o.icao})` : ''))) : h('p', { class: 'small' }, 'Rien de signalé (hélistations, ULM, lignes HT, éoliennes, prisons…).'))
+      R.osm ? (R.osm.length ? h('ul', { class: 'plain' }, ...R.osm.slice(0, 12).map((o) => h('li', o.lat != null ? { class: 'click', onclick: () => showOnMap(o) } : {}, h('b', {}, fmtDist(o.dist) + ' ' + (o.dir || '')), ' ', o.label, o.name ? ' · ' + o.name : '', o.icao ? ` (${o.icao})` : ''))) : h('p', { class: 'small' }, 'Rien de signalé (hélistations, ULM, lignes HT, éoliennes, prisons…).'))
         : h('p', { class: 'small muted' }, 'Non disponible (pas de réseau).')),
     h('section', { class: 'card' }, h('div', { class: 'lbl' }, 'Espaces protégés (INPN) · survol possiblement réglementé'),
-      R.protected ? (R.protected.length ? h('ul', { class: 'plain' }, ...R.protected.slice(0, 8).map((p) => h('li', {}, h('b', {}, fmtDist(p.dist) + ' ' + (p.dir || '')), ' ', p.label, ' · ', p.url ? h('a', { href: p.url, target: '_blank', rel: 'noopener' }, p.name) : p.name))) : h('p', { class: 'small' }, 'Aucun espace protégé recensé dans le rayon.'))
+      R.protected ? (R.protected.length ? h('ul', { class: 'plain' }, ...R.protected.slice(0, 8).map((p) => h('li', { class: 'click', onclick: (ev) => { if (!ev.target.closest('a')) showOnMap(p); } }, h('b', {}, fmtDist(p.dist) + ' ' + (p.dir || '')), ' ', p.label, ' · ', p.name, p.url ? h('a', { href: p.url, target: '_blank', rel: 'noopener', class: 'small' }, ' fiche INPN') : ''))) : h('p', { class: 'small' }, 'Aucun espace protégé recensé dans le rayon.'))
         : h('p', { class: 'small muted' }, 'Non disponible (pas de réseau).')),
     h('p', { class: 'foot' }, `Données : SIA ${R.meta ? R.meta.source + ' (AIRAC ' + R.meta.airac + ')' : 'absentes'}, ZICAD, OSM, INPN, IGN · altitude du sol ${R.ground != null ? Math.round(R.ground) + ' m' : 'inconnue'} · analysé ${ago(R.updated)}. Géovigilance : ne remplace ni l'AIP, ni les SUP AIP, ni les NOTAM.`));
   drawMap(mapBox, R, root);
@@ -346,8 +398,10 @@ function drawMap(box, R, root) {
       const g = v.g;
       const lo = agl(v.lo || 0, v.loRef, R.ground);
       const pop = `<b>${zname(e.z).replace(/</g, '&lt;')}</b><br>${e.z.typeLabel || ''}<br>${LABEL[e.restriction]} · ${lo == null ? 'plancher ' + Math.round(v.lo) + ' m mer' : lo <= 0 ? 'dès le sol' : 'au-delà de ' + Math.round(lo) + ' m'}<br><small>${(e.z.cond || '').replace(/</g, '&lt;')}</small>`;
-      const layer = g.t === 'C' ? L.circle([g.c[1], g.c[0]], { radius: g.r, ...st }) : L.polygon(g.rings.map((r) => r.map((p) => [p[1], p[0]])), st);
-      layer.bindPopup(pop).addTo(zl);
+      const layer = geomLayers(g, st);
+      const box2 = h('div', { html: pop });
+      box2.append(h('div', {}, h('button', { class: 'linklike small', onclick: () => { map.closePopup(); flashRow(e.z.id); } }, 'Voir dans la liste ›')));
+      layer.bindPopup(box2).addTo(zl);
     }
   }
   for (const p of R.protected || []) {

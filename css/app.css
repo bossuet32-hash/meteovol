@@ -113,3 +113,13 @@ ul.files .acts { margin-left: auto; }
 #toast { position: fixed; left: 50%; bottom: calc(80px + var(--safe-b)); transform: translateX(-50%) translateY(20px); opacity: 0; transition: .25s; background: #111; color: #fff; padding: 10px 16px; border-radius: 12px; z-index: 2000; font-size: 14px; pointer-events: none; }
 #toast.on { opacity: 1; transform: translateX(-50%); }
 .leaflet-container { font: inherit; }
+
+.click { cursor: pointer; -webkit-tap-highlight-color: rgba(11,87,208,.15); }
+.zrow.click:active, li.click:active { background: var(--bg); }
+.zgo { grid-column: 2; color: var(--accent); font-weight: 600; }
+.zrow:not(:has(.zd)) > .zgo { grid-column: 1; }
+.zrow.flash { animation: flash 1.6s ease-out; }
+@keyframes flash { 0% { background: #ffe680; } 100% { background: transparent; } }
+.chip { display: inline-block; margin: 3px 4px 0 0; padding: 4px 8px; border-radius: 14px; border: 1px solid var(--line); background: var(--bg); color: var(--accent); font: inherit; font-size: 13px; }
+.zones-map { scroll-margin-top: calc(64px + var(--safe-t)); }
+.zpop .leaflet-popup-content { font-size: 13px; margin: 8px 10px; }
