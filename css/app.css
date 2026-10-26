@@ -135,3 +135,5 @@ ul.files .acts { margin-left: auto; }
 .badge.sm { font-size: 11px; padding: 1px 6px; vertical-align: 2px; }
 .tabbar button { font-size: 10px; } .tabbar button .ti { font-size: 18px; }
 .map { scroll-margin-top: calc(64px + var(--safe-t)); }
+
+.card.peuplee { border-left: 6px solid #ad1457; } .card.peuplee.on { background: color-mix(in srgb, #ad1457 8%, var(--card)); }

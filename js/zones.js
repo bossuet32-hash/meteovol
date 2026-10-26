@@ -1,6 +1,6 @@
 // Onglet « Zones » : restrictions SIA (ED-269) + ZICAD hors ligne, espaces protégés INPN et vigilance OSM en ligne.
 // L'analyse reprend celle de la Kobo (zones.lua).
-import { h, fill, settings, saveSettings, fetchCached, fmtDist, pickPlace, ago, toast, toL93, setSite } from './util.js';
+import { h, fill, settings, saveSettings, fetchCached, fmtDist, pickPlace, ago, toast, toL93, setSite, addWorkingDays, dateLongFr } from './util.js';
 import { ignLayer, orthoLayer, limitesLayer } from './map.js';
 
 export const SEV = { PROHIBITED: 4, ZICAD: 4, REQ_AUTHORISATION: 3, NOTAM: 3, CONDITIONAL: 2, INFO: 1 };
@@ -84,11 +84,11 @@ export function analyse(zones, lat, lon, radius, ground) {
     for (const v of z.vols || []) {
       const [d, qx, qy] = geomDist(v.g, P);
       if (d < zd) { zd = d; zx = qx; zy = qy; }
-      if (d === 0) at.push(v);
+      if (d <= (z.buffer || 0)) at.push(v);
     }
     if (zd > radius) continue;
-    const e = { z, dist: zd, inside: at.length > 0, restriction: z.type === 'ZICAD' ? 'ZICAD' : z.restriction || 'CONDITIONAL' };
-    if (zd > 0) e.dir = bearing(zx, zy);
+    const e = { z, dist: Math.max(0, zd - (z.buffer || 0)), raw_dist: zd, inside: at.length > 0, restriction: z.type === 'ZICAD' ? 'ZICAD' : z.restriction || 'CONDITIONAL' };
+    if (e.dist > 0) e.dir = bearing(zx, zy);
     e.qx = zx; e.qy = zy;
     let floor = null, known = true, ceil = null;
     for (const v of at.length ? at : z.vols) {
@@ -222,16 +222,39 @@ async function protectedAreas(lat, lon, r) {
   return ok ? out : null;
 }
 
+// ---------------------------------------------------------------- zones peuplées (agglomérations, carte DGAC/IGN des restrictions drones)
+export const PEUPLEE_DELAI = 10;   // jours ouvrés de préavis pour la déclaration en préfecture
+export async function urbanAreas(lat, lon, r) {
+  const js = (await fetchCached(`${WFS}&TYPENAMES=TRANSPORTS.DRONES.RESTRICTIONS:carte_restriction_drones_lf&COUNT=3000&BBOX=${bboxTxt(lat, lon, r)},CRS:84`, { timeout: 30000 })).data;
+  const vols = [];
+  for (const f of js.features || []) {
+    if (!/agglom/i.test((f.properties || {}).remarque || '')) continue;
+    const g = f.geometry || {}, rings = [];
+    if (g.type === 'Polygon') rings.push(...g.coordinates);
+    else if (g.type === 'MultiPolygon') for (const p of g.coordinates) rings.push(...p);
+    if (rings.length) vols.push({ lo: 0, loRef: 'AGL', up: null, upRef: 'AGL', g: { t: 'P', rings } });
+  }
+  if (!vols.length) return null;
+  return {
+    id: 'AGGLO', type: 'AGGLO', name: 'Agglomération (zone peuplée)', typeLabel: 'zone peuplée : agglomération + 50 m', restriction: 'CONDITIONAL',
+    buffer: 50, vols, authShort: 'préfecture (AlphaTango)',
+    cond: `Spécifique (STS, autorisation) : déclaration en préfecture au moins ${PEUPLEE_DELAI} jours ouvrés avant le vol, via AlphaTango. Ouverte : espace public en agglomération interdit sauf arrêté espace (déclaration préfecture, activité professionnelle).`,
+  };
+}
+
 export async function collect(site, radius) {
   const R = { lat: site.lat, lon: site.lon, site: site.name, radius, updated: Date.now() };
   const { zones, meta: m } = await loadZones(site.lat, site.lon, radius);
   R.meta = m;
-  const [el, ov, pr] = await Promise.allSettled([
+  const [el, ov, pr, ur] = await Promise.allSettled([
     fetchCached(`https://api.open-meteo.com/v1/elevation?latitude=${site.lat.toFixed(5)}&longitude=${site.lon.toFixed(5)}`),
     fetchCached('https://overpass-api.de/api/interpreter', { key: `ovp:${site.lat.toFixed(3)},${site.lon.toFixed(3)},${radius}`, timeout: 30000,
       init: { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'data=' + encodeURIComponent(overpassQuery(site.lat, site.lon, radius)) } }),
     protectedAreas(site.lat, site.lon, radius),
+    urbanAreas(site.lat, site.lon, radius),
   ]);
+  if (ur.status === 'fulfilled' && ur.value) zones.push(ur.value);
+  R.urbanOk = ur.status === 'fulfilled';
   if (el.status === 'fulfilled' && Array.isArray(el.value.data.elevation)) R.ground = el.value.data.elevation[0];
   const an = analyse(zones, site.lat, site.lon, radius, R.ground);
   R.list = an.list; R.verdict = an.V;
@@ -262,13 +285,32 @@ export function bannerInfo(R) {
     else if (V.temp_only) { l2 = 'Zone non permanente : vérifier son activation (NOTAM, SOFIA)'; cls = 'warn'; }
     else if (V.level === 'REQ_AUTHORISATION') { l2 = 'Accord nécessaire dès le sol · ' + auth; cls = 'bad'; }
     else { l2 = 'Interdit dès le sol sauf accord · ' + auth; cls = 'bad'; }
+    if (V.level === 'CONDITIONAL' && e && e.z.type === 'AGGLO') { lab = 'ZONE PEUPLÉE'; l2 = `Déclaration en préfecture ≥ ${PEUPLEE_DELAI} jours ouvrés avant le vol (AlphaTango)`; }
     if (V.zones.length > 1) l2 += ` · ${V.zones.length} zones au point`;
   }
-  return { lab, l1, l2, cls };
+  const peuplee = V.zones.find((x) => x.z.type === 'AGGLO');
+  if (peuplee && V.level !== 'CONDITIONAL') l2 += ' · zone peuplée : déclaration préfecture';
+  return { lab, l1, l2, cls, peuplee: !!peuplee };
+}
+
+// Encart « zone peuplée » : délai de déclaration en préfecture
+export function peupleeInfo(R, flightDate) {
+  const e = R.list.find((x) => x.z.type === 'AGGLO');
+  if (!e) return null;
+  const today = new Date();
+  const earliest = addWorkingDays(today, PEUPLEE_DELAI);
+  const out = { inside: e.inside, dist: e.dist, dir: e.dir, earliest };
+  if (flightDate) {
+    const fd = new Date(flightDate + 'T12:00:00');
+    out.deadline = addWorkingDays(fd, -PEUPLEE_DELAI);
+    out.late = out.deadline < new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------- styles carte
 export function volStyle(e, v, ground) {
+  if (e.z.type === 'AGGLO') return { color: '#ad1457', weight: 1.6, dashArray: '3 3', fillColor: '#ad1457', fillOpacity: 0.14, buffer: 50 };
   const lo = agl(v.lo || 0, v.loRef, ground);
   if (lo != null && lo >= 120) return null;
   const step = (lo || 0) > 0 && e.restriction !== 'CONDITIONAL' && e.restriction !== 'ZICAD';
@@ -357,11 +399,23 @@ export async function render(root) {
   const inside = R.list.filter((e) => e.inside && !e.above120), near = R.list.filter((e) => !e.inside && !e.above120), info = R.list.filter((e) => e.above120);
   fill(root, 
     h('section', { class: `banner ${B.cls}` }, h('div', { class: 'ban-lab' }, B.lab), h('div', { class: 'ban-txt' }, h('b', {}, B.l1), h('div', { class: 'small' }, B.l2))),
+    (() => {
+      const P = peupleeInfo(R);
+      if (!P) return R.urbanOk === false ? h('p', { class: 'small muted' }, 'Agglomérations (zones peuplées) non chargées : pas de réseau.') : null;
+      if (!P.inside && P.dist > 1000) return null;
+      return h('section', { class: `card peuplee ${P.inside ? 'on' : ''}` },
+        h('div', { class: 'lbl' }, P.inside ? 'Zone peuplée au point de vol' : `Agglomération à ${fmtDist(P.dist)} ${P.dir || ''}`),
+        h('p', { class: 'small' }, P.inside
+          ? h('b', {}, `Déclaration en préfecture obligatoire, au moins ${PEUPLEE_DELAI} jours ouvrés avant le vol (AlphaTango).`)
+          : 'Hors zone peuplée au point, mais une agglomération est proche : le moindre déplacement peut y entrer (tampon de 50 m compris).'),
+        P.inside ? h('p', { class: 'small' }, `Déclarée aujourd'hui, un vol est possible au plus tôt le ${dateLongFr(P.earliest)}. Pour une mission datée, la date limite figure dans l'onglet Missions.`) : null,
+        h('p', { class: 'small muted' }, 'Limites : carte officielle des restrictions drones (DGAC / IGN) + 50 m. Rassemblements de personnes (150 m) : à vérifier sur place.'));
+    })(),
     h('div', { class: 'row space' },
       h('div', { class: 'small muted' }, `${site.name} · ${site.lat.toFixed(5)}, ${site.lon.toFixed(5)} · L93 ${Math.round(l93.E)} / ${Math.round(l93.N)}`),
       h('button', { class: 'btn small', onclick: async () => { const p = await pickPlace('Lieu de vol'); if (p) { setSite(p); render(root); } } }, 'Lieu…')),
     h('div', { class: 'map-wrap' }, mapBox),
-    h('p', { class: 'small muted' }, 'Touchez une zone de la carte ou de la liste pour la mettre en évidence · appui long ou « Analyser le centre » pour un autre point · rouge : interdit · orange : accord · bleu : conditions · violet : ZICAD · tireté : au-delà d\'une hauteur'),
+    h('p', { class: 'small muted' }, 'Touchez une zone de la carte ou de la liste pour la mettre en évidence · appui long ou « Analyser le centre » pour un autre point · rouge : interdit · orange : accord · bleu : conditions · violet : ZICAD · rose : agglomération + 50 m (zone peuplée) · tireté : au-delà d\'une hauteur'),
     R.outdated ? h('p', { class: 'warn-txt' }, `Données SIA périmées (AIRAC ${R.meta.airac}, ${R.airac_age} jours) : mettre à jour le dossier data/zones.`) : null,
     h('section', { class: 'card' }, h('div', { class: 'lbl' }, `Au point de vol · ${inside.length} zone(s)`),
       inside.length ? inside.map((e) => zoneRow(e, false)) : h('p', {}, 'Aucune zone SIA / ZICAD au point de vol (sous 120 m).')),
@@ -390,6 +444,11 @@ function drawMap(box, R, root) {
   L.control.layers({ 'Plan IGN': plan, 'Photo aérienne': ortho }, { 'Limites communales': lim, 'Zones SIA / ZICAD': zl, 'Espaces protégés': pl, 'Vigilance OSM': ol }, { collapsed: true }).addTo(map);
   L.control.scale({ imperial: false }).addTo(map);
   const order = [...R.list].sort((a, b) => a.sev - b.sev);
+  const buffers = [];
+  const bufWidth = () => {           // 2 x 50 m en pixels à la latitude du site
+    const mpp = (40075016 * Math.cos((R.lat * Math.PI) / 180)) / (256 * 2 ** map.getZoom());
+    buffers.forEach((b) => b.setStyle({ weight: Math.max(2, 100 / mpp) }));
+  };
   for (const e of order) {
     if (e.above120) continue;
     for (const v of e.z.vols || []) {
@@ -399,11 +458,16 @@ function drawMap(box, R, root) {
       const lo = agl(v.lo || 0, v.loRef, R.ground);
       const pop = `<b>${zname(e.z).replace(/</g, '&lt;')}</b><br>${e.z.typeLabel || ''}<br>${LABEL[e.restriction]} · ${lo == null ? 'plancher ' + Math.round(v.lo) + ' m mer' : lo <= 0 ? 'dès le sol' : 'au-delà de ' + Math.round(lo) + ' m'}<br><small>${(e.z.cond || '').replace(/</g, '&lt;')}</small>`;
       const layer = geomLayers(g, st);
+      if (st.buffer) {
+        const buf = geomLayers(g, { color: st.color, opacity: 0.22, weight: 4, fill: false, interactive: false, lineJoin: 'round' }).addTo(zl);
+        buffers.push(buf);
+      }
       const box2 = h('div', { html: pop });
       box2.append(h('div', {}, h('button', { class: 'linklike small', onclick: () => { map.closePopup(); flashRow(e.z.id); } }, 'Voir dans la liste ›')));
       layer.bindPopup(box2).addTo(zl);
     }
   }
+  map.on('zoomend', bufWidth); setTimeout(bufWidth, 0);
   for (const p of R.protected || []) {
     L.polygon(p.geom.rings.map((r) => r.map((q) => [q[1], q[0]])), { color: '#2e7d32', weight: 1.4, dashArray: '2 4', fillColor: '#2e7d32', fillOpacity: 0.06 })
       .bindPopup(`<b>${p.name}</b><br>${p.label}`).addTo(pl);

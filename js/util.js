@@ -196,3 +196,27 @@ export function pickPlace(title = 'Choisir un lieu') {
     setTimeout(() => input.focus(), 50);
   });
 }
+
+// ---------------------------------------------------------------- jours ouvrés (France métropolitaine)
+function easter(y) {
+  const a = y % 19, b = Math.floor(y / 100), c = y % 100, d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3);
+  const hh2 = (19 * a + b - d - g + 15) % 30, i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - hh2 - k) % 7, m = Math.floor((a + 11 * hh2 + 22 * l) / 451);
+  const month = Math.floor((hh2 + l - 7 * m + 114) / 31), day = ((hh2 + l - 7 * m + 114) % 31) + 1;
+  return new Date(y, month - 1, day);
+}
+export function isHoliday(d) {
+  const y = d.getFullYear(), md = `${d.getMonth() + 1}-${d.getDate()}`;
+  if (['1-1', '5-1', '5-8', '7-14', '8-15', '11-1', '11-11', '12-25'].includes(md)) return true;
+  const e = easter(y);
+  for (const off of [1, 39, 50]) { const x = new Date(e); x.setDate(x.getDate() + off); if (x.getMonth() === d.getMonth() && x.getDate() === d.getDate()) return true; }
+  return false;
+}
+export const isWorkingDay = (d) => d.getDay() !== 0 && d.getDay() !== 6 && !isHoliday(d);
+// ajoute (ou retire si n < 0) n jours ouvrés à une date
+export function addWorkingDays(date, n) {
+  const d = new Date(date); d.setHours(12, 0, 0, 0);
+  const s = Math.sign(n); let k = Math.abs(n);
+  while (k > 0) { d.setDate(d.getDate() + s); if (isWorkingDay(d)) k--; }
+  return d;
+}
+export const dateLongFr = (t) => new Date(t).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });

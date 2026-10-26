@@ -1,6 +1,7 @@
 // Onglet « Missions » : dossiers mission (lieu, date, notes), checklist, documents, archives PDF. Stockage local (IndexedDB).
 import { h, fill, dbAll, dbGet, dbPut, dbDel, pickPlace, toL93, toast, dateFr, hhmm, saveSettings, setSite } from './util.js';
 import { report } from './pdf.js';
+import { urbanAreas, analyse, peupleeInfo, PEUPLEE_DELAI } from './zones.js';
 
 const DEFAULT_CHECK = [
   'Zones de vol vérifiées (SIA, ZICAD, arrêtés locaux)', 'NOTAM consultés pour la date et le créneau', 'Autorisations / accords obtenus (contrôle, gestionnaire)',
@@ -53,6 +54,21 @@ async function missionView(root, id) {
   const l93 = ms.site ? toL93(ms.site.lat, ms.site.lon) : null;
   const done = ms.check.filter((c) => c.ok).length;
   const busy = h('span', { class: 'small muted' });
+  // zone peuplée : date limite de déclaration en préfecture pour la date de la mission
+  const peupleBox = h('div', {});
+  if (ms.site) (async () => {
+    try {
+      const ag = await urbanAreas(ms.site.lat, ms.site.lon, 3000);
+      if (!ag) return;
+      const P = peupleeInfo(analyse([ag], ms.site.lat, ms.site.lon, 3000, null), ms.date);
+      if (!P || !P.inside) return;
+      fill(peupleBox, h('section', { class: `card peuplee on` },
+        h('div', { class: 'lbl' }, 'Zone peuplée : déclaration en préfecture'),
+        P.deadline ? h('p', { class: P.late ? 'warn-txt' : 'small' }, h('b', {}, `À déposer sur AlphaTango au plus tard le ${P.deadline.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}`), P.late ? ' : délai dépassé pour cette date, décaler la mission.' : ` (${PEUPLEE_DELAI} jours ouvrés avant le vol).`)
+          : h('p', { class: 'small' }, `Fixez la date du vol pour obtenir la date limite (${PEUPLEE_DELAI} jours ouvrés avant).`),
+        h('p', { class: 'small muted' }, 'Ajoutez « Déclaration préfecture (zone peuplée) » à la checklist si besoin.')));
+    } catch { /* hors ligne */ }
+  })();
   fill(root, 
     h('div', { class: 'row space' }, h('button', { class: 'btn ghost', onclick: () => listView(root) }, '‹ Missions'),
       h('button', { class: 'btn ghost small', onclick: async () => { if (confirm('Supprimer cette mission et ses documents ?')) { for (const f of files) await dbDel('files', f.id); await dbDel('missions', id); listView(root); } } }, 'Supprimer')),
@@ -76,12 +92,13 @@ async function missionView(root, id) {
         h('button', { class: 'x', 'aria-label': 'Retirer', onclick: async () => { ms.check.splice(i, 1); await save({}); rerender(); } }, '×')))),
       h('form', { class: 'row', onsubmit: async (e) => { e.preventDefault(); const v = e.target.it.value.trim(); if (v) { ms.check.push({ txt: v, ok: false }); await save({}); rerender(); } } },
         h('input', { name: 'it', placeholder: 'Ajouter un point…' }), h('button', { class: 'btn small' }, 'Ajouter'))),
+    peupleBox,
     h('section', { class: 'card' },
       h('div', { class: 'row space' }, h('div', { class: 'lbl' }, 'Archives météo et zones'), busy),
       h('button', { class: 'btn wide', disabled: !ms.site, onclick: async (e) => {
         e.target.disabled = true; busy.textContent = 'Préparation du PDF (réseau nécessaire)…';
         try {
-          const blob = await report(ms.site, ms.name);
+          const blob = await report(ms.site, ms.name, ms.date);
           const d = new Date();
           const name = `meteo_zones_${d.toISOString().slice(0, 10)}_${hhmm(d).replace('h', '')}.pdf`;
           await dbPut('files', { id: uid(), mission: id, name, blob, t: Date.now(), kind: 'archive' });

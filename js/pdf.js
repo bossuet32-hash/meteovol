@@ -53,6 +53,7 @@ export async function zonesMapImage(R, W = 1400, Hh = 1400) {
       if (!st) continue;
       path(v.g);
       if (st.fill !== false) { g.globalAlpha = st.fillOpacity; g.fillStyle = st.fillColor; g.fill('evenodd'); g.globalAlpha = 1; }
+      if (st.buffer) { g.setLineDash([]); g.globalAlpha = 0.25; g.lineJoin = 'round'; g.lineWidth = (2 * st.buffer / mpp) * scale; g.strokeStyle = st.color; g.stroke(); g.globalAlpha = 1; }
       g.setLineDash(st.dashArray ? st.dashArray.split(' ').map((x) => +x * 1.6) : []);
       g.lineWidth = st.weight * 1.6; g.strokeStyle = st.color; g.stroke();
     }
@@ -70,7 +71,7 @@ export async function zonesMapImage(R, W = 1400, Hh = 1400) {
   try { return cv.toDataURL('image/jpeg', 0.85); } catch { return null; }
 }
 
-export async function report(site, title = 'Dossier mission') {
+export async function report(site, title = 'Dossier mission', flightDate = null) {
   const { jsPDF } = window.jspdf;
   const S = settings();
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
@@ -171,9 +172,15 @@ export async function report(site, title = 'Dossier mission') {
     doc.setTextColor(255); doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.text(T(BI.lab), m + 3, y + 3);
     doc.setFontSize(9.5); doc.text(T(BI.l1), m + 48, y); doc.setFont('helvetica', 'normal'); doc.text(doc.splitTextToSize(T(BI.l2), W - 2 * m - 50), m + 48, y + 4.5);
     doc.setTextColor(0); y += 13;
+    const PI = Z.peupleeInfo(R, flightDate);
+    if (PI && (PI.inside || PI.dist < 1000)) {
+      txt(PI.inside
+        ? `ZONE PEUPLÉE : déclaration en préfecture au moins ${Z.PEUPLEE_DELAI} jours ouvrés avant le vol (AlphaTango)` + (PI.deadline ? ` · pour un vol le ${new Date(flightDate + 'T12:00').toLocaleDateString('fr-FR')} : au plus tard le ${PI.deadline.toLocaleDateString('fr-FR')}${PI.late ? ' (DÉLAI DÉPASSÉ)' : ''}` : '')
+        : `Agglomération à ${fmtDist(PI.dist)} ${PI.dir || ''} : rester hors du tampon de 50 m ou déclarer le vol en préfecture.`, 9.5, true);
+    }
     const img = await zonesMapImage(R);
     if (img) { doc.addImage(img, 'JPEG', m + 22, y, 138, 138); y += 141; }
-    txt('Rouge : interdit · orange : accord · bleu : conditions · violet : ZICAD · tireté : au-delà d\'une hauteur · vert : espace protégé', 7.5);
+    txt('Rouge : interdit · orange : accord · bleu : conditions · violet : ZICAD · rose : agglomération + 50 m (zone peuplée) · tireté : au-delà d\'une hauteur · vert : espace protégé', 7.5);
     const rows = R.list.filter((e) => !e.above120);
     for (const e of rows) {
       if (y > 275) { doc.addPage(); y = 20; }
