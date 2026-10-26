@@ -10,9 +10,35 @@ URL = ("https://map.centipede-rtk.org/index.php/lizmap/service/?repository=cent&
 if len(sys.argv) > 1:
     js = json.load(open(sys.argv[1], encoding="utf-8"))
 else:
-    req = urllib.request.Request(URL, headers={"User-Agent": "meteovol-pwa (GitHub Actions)"})
-    with urllib.request.urlopen(req, timeout=120) as r:
-        js = json.loads(r.read().decode("utf-8"))
+    js, errs = None, []
+    UAS = ["meteovol-pwa (GitHub Actions; +https://bossuet32-hash.github.io/meteovol/)",
+           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36"]
+    for url in (URL, URL.replace("VERSION=1.0.0", "VERSION=1.1.0")):
+        for ua in UAS:
+            try:
+                req = urllib.request.Request(url, headers={"User-Agent": ua, "Accept": "application/json,*/*"})
+                with urllib.request.urlopen(req, timeout=120) as r:
+                    js = json.loads(r.read().decode("utf-8"))
+                break
+            except Exception as ex:
+                body = ""
+                if hasattr(ex, "read"):
+                    try:
+                        body = ex.read()[:200].decode("utf-8", "replace").replace("\n", " ")
+                    except Exception:
+                        pass
+                errs.append("%s (%s) %s" % (type(ex).__name__, ex, body))
+                time.sleep(3)
+        if js:
+            break
+    if not js:
+        # on garde la liste précédente ; échec seulement si elle a plus de 7 jours
+        try:
+            age = time.time() - json.load(open("data/centipede.json", encoding="utf-8"))["generated"]
+        except Exception:
+            age = 1e9
+        print("::warning title=Centipède injoignable::" + " | ".join(errs)[:900])
+        sys.exit(1 if age > 7 * 86400 else 0)
 
 def ts(s):
     try:
