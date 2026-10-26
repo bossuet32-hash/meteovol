@@ -180,7 +180,7 @@ export async function report(site, title = 'Dossier mission', flightDate = null)
     }
     const img = await zonesMapImage(R);
     if (img) { doc.addImage(img, 'JPEG', m + 22, y, 138, 138); y += 141; }
-    txt('Rouge : interdit · orange : accord · bleu : conditions · violet : ZICAD · rose : agglomération + 50 m (zone peuplée) · tireté : au-delà d\'une hauteur · vert : espace protégé', 7.5);
+    txt('Rouge : interdit · orange : accord · bleu : conditions · violet : ZICAD · tireté : au-delà d\'une hauteur · vert : espace protégé', 7.5);
     const rows = R.list.filter((e) => !e.above120);
     for (const e of rows) {
       if (y > 275) { doc.addPage(); y = 20; }

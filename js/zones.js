@@ -223,6 +223,7 @@ async function protectedAreas(lat, lon, r) {
 }
 
 // ---------------------------------------------------------------- zones peuplées (agglomérations, carte DGAC/IGN des restrictions drones)
+export const PEUPLEE_ACTIF = false;  // désactivé : en attente d'une source fiable (agglomérations de la carte OACI)
 export const PEUPLEE_DELAI = 10;   // jours ouvrés de préavis pour la déclaration en préfecture
 export async function urbanAreas(lat, lon, r) {
   const js = (await fetchCached(`${WFS}&TYPENAMES=TRANSPORTS.DRONES.RESTRICTIONS:carte_restriction_drones_lf&COUNT=3000&BBOX=${bboxTxt(lat, lon, r)},CRS:84`, { timeout: 30000 })).data;
@@ -251,10 +252,10 @@ export async function collect(site, radius) {
     fetchCached('https://overpass-api.de/api/interpreter', { key: `ovp:${site.lat.toFixed(3)},${site.lon.toFixed(3)},${radius}`, timeout: 30000,
       init: { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'data=' + encodeURIComponent(overpassQuery(site.lat, site.lon, radius)) } }),
     protectedAreas(site.lat, site.lon, radius),
-    urbanAreas(site.lat, site.lon, radius),
+    PEUPLEE_ACTIF ? urbanAreas(site.lat, site.lon, radius) : Promise.resolve(null),
   ]);
   if (ur.status === 'fulfilled' && ur.value) zones.push(ur.value);
-  R.urbanOk = ur.status === 'fulfilled';
+  if (PEUPLEE_ACTIF) R.urbanOk = ur.status === 'fulfilled';
   if (el.status === 'fulfilled' && Array.isArray(el.value.data.elevation)) R.ground = el.value.data.elevation[0];
   const an = analyse(zones, site.lat, site.lon, radius, R.ground);
   R.list = an.list; R.verdict = an.V;
@@ -415,7 +416,7 @@ export async function render(root) {
       h('div', { class: 'small muted' }, `${site.name} · ${site.lat.toFixed(5)}, ${site.lon.toFixed(5)} · L93 ${Math.round(l93.E)} / ${Math.round(l93.N)}`),
       h('button', { class: 'btn small', onclick: async () => { const p = await pickPlace('Lieu de vol'); if (p) { setSite(p); render(root); } } }, 'Lieu…')),
     h('div', { class: 'map-wrap' }, mapBox),
-    h('p', { class: 'small muted' }, 'Touchez une zone de la carte ou de la liste pour la mettre en évidence · appui long ou « Analyser le centre » pour un autre point · rouge : interdit · orange : accord · bleu : conditions · violet : ZICAD · rose : agglomération + 50 m (zone peuplée) · tireté : au-delà d\'une hauteur'),
+    h('p', { class: 'small muted' }, 'Touchez une zone de la carte ou de la liste pour la mettre en évidence · appui long ou « Analyser le centre » pour un autre point · rouge : interdit · orange : accord · bleu : conditions · violet : ZICAD · tireté : au-delà d\'une hauteur'),
     R.outdated ? h('p', { class: 'warn-txt' }, `Données SIA périmées (AIRAC ${R.meta.airac}, ${R.airac_age} jours) : mettre à jour le dossier data/zones.`) : null,
     h('section', { class: 'card' }, h('div', { class: 'lbl' }, `Au point de vol · ${inside.length} zone(s)`),
       inside.length ? inside.map((e) => zoneRow(e, false)) : h('p', {}, 'Aucune zone SIA / ZICAD au point de vol (sous 120 m).')),

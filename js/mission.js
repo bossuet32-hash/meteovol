@@ -1,7 +1,7 @@
 // Onglet « Missions » : dossiers mission (lieu, date, notes), checklist, documents, archives PDF. Stockage local (IndexedDB).
 import { h, fill, dbAll, dbGet, dbPut, dbDel, pickPlace, toL93, toast, dateFr, hhmm, saveSettings, setSite } from './util.js';
 import { report } from './pdf.js';
-import { urbanAreas, analyse, peupleeInfo, PEUPLEE_DELAI } from './zones.js';
+import { urbanAreas, analyse, peupleeInfo, PEUPLEE_DELAI, PEUPLEE_ACTIF } from './zones.js';
 
 const DEFAULT_CHECK = [
   'Zones de vol vérifiées (SIA, ZICAD, arrêtés locaux)', 'NOTAM consultés pour la date et le créneau', 'Autorisations / accords obtenus (contrôle, gestionnaire)',
@@ -56,7 +56,7 @@ async function missionView(root, id) {
   const busy = h('span', { class: 'small muted' });
   // zone peuplée : date limite de déclaration en préfecture pour la date de la mission
   const peupleBox = h('div', {});
-  if (ms.site) (async () => {
+  if (PEUPLEE_ACTIF && ms.site) (async () => {
     try {
       const ag = await urbanAreas(ms.site.lat, ms.site.lon, 3000);
       if (!ag) return;
