@@ -1,11 +1,13 @@
 // Navigation entre onglets, réglages, service worker.
-import { h, fill, $, $$, settings, saveSettings, pickPlace, toast } from './util.js';
+import { h, fill, $, $$, settings, saveSettings, pickPlace, toast, setSite } from './util.js';
 import * as meteo from './meteo.js';
 import * as bulletin from './bulletin.js';
 import * as zones from './zones.js';
 import * as mission from './mission.js';
+import * as lieu from './lieu.js';
 
 const TABS = {
+  lieu: { label: 'Lieu', icon: '⌖', mod: lieu },
   meteo: { label: 'Météo', icon: '✈︎', mod: meteo },
   bulletin: { label: 'Bulletin', icon: '☁︎', mod: bulletin },
   zones: { label: 'Zones', icon: '⬡', mod: zones },
@@ -19,8 +21,8 @@ async function settingsView(root) {
   const st = h('input', { value: (S.stations || []).join(' '), placeholder: 'vide = automatique (ex. LFBO LFBT LFCR)', autocapitalize: 'characters' });
   fill(root, 
     h('section', { class: 'card' },
-      h('div', { class: 'lbl' }, 'Lieu par défaut (météo et bulletin)'),
-      h('div', { class: 'row space' }, h('b', {}, S.site.name), h('button', { class: 'btn small', onclick: async () => { const p = await pickPlace(); if (p) { saveSettings({ site: p, zonesSite: null }); settingsView(root); } } }, 'Changer…')),
+      h('div', { class: 'lbl' }, 'Point de vol (réglé dans l\'onglet Lieu)'),
+      h('div', { class: 'row space' }, h('b', {}, S.site.name), h('button', { class: 'btn small', onclick: () => go('lieu') }, 'Changer…')),
       h('div', { class: 'lbl' }, 'Aérodromes METAR/TAF (codes OACI)'), st,
       h('p', { class: 'small muted' }, `Vide : les 4 terrains les plus proches qui publient un METAR. ${ad.length} aérodromes connus.`),
       h('label', {}, h('div', { class: 'lbl' }, 'Vent / rafales max de la machine (km/h)'), h('input', { type: 'number', inputmode: 'numeric', min: 10, max: 90, value: S.maxWind, id: 'mw' })),
@@ -47,7 +49,7 @@ async function settingsView(root) {
 
 let current = null;
 async function go(name) {
-  if (!TABS[name]) name = 'meteo';
+  if (!TABS[name]) name = 'lieu';
   current = name;
   $$('.tabbar button').forEach((b) => b.classList.toggle('on', b.dataset.tab === name));
   $('#title').textContent = TABS[name].label;
@@ -64,7 +66,8 @@ function init() {
   $('#refresh').onclick = () => go(current);
   let start = location.hash.slice(1);
   if (!TABS[start]) { try { start = localStorage.getItem('mv.tab'); } catch { start = null; } }
-  go(start || 'meteo');
+  go(start || 'lieu');
+  addEventListener('mv-go', (e) => go(e.detail));
   const net = () => document.body.classList.toggle('offline', !navigator.onLine);
   addEventListener('online', net); addEventListener('offline', net); net();
   if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});

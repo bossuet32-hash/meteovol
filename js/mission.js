@@ -1,5 +1,5 @@
 // Onglet « Missions » : dossiers mission (lieu, date, notes), checklist, documents, archives PDF. Stockage local (IndexedDB).
-import { h, fill, dbAll, dbGet, dbPut, dbDel, pickPlace, toL93, toast, dateFr, hhmm, saveSettings } from './util.js';
+import { h, fill, dbAll, dbGet, dbPut, dbDel, pickPlace, toL93, toast, dateFr, hhmm, saveSettings, setSite } from './util.js';
 import { report } from './pdf.js';
 
 const DEFAULT_CHECK = [
@@ -65,7 +65,7 @@ async function missionView(root, id) {
       h('div', { class: 'row space' },
         h('div', { class: 'small' }, ms.site ? ms.site.name : 'Non défini', ms.site ? h('div', { class: 'muted' }, `${ms.site.lat.toFixed(5)}, ${ms.site.lon.toFixed(5)} · L93 ${Math.round(l93.E)} / ${Math.round(l93.N)}`) : null),
         h('button', { class: 'btn small', onclick: async () => { const p = await pickPlace('Lieu de la mission'); if (p) { await save({ site: p }); rerender(); } } }, 'Choisir…')),
-      ms.site ? h('button', { class: 'btn small ghost', onclick: () => { saveSettings({ site: ms.site, zonesSite: ms.site }); toast('Météo et zones réglées sur ce lieu'); } }, 'Utiliser ce lieu pour la météo et les zones') : null,
+      ms.site ? h('button', { class: 'btn small ghost', onclick: () => { setSite(ms.site); toast('Lieu de vol réglé sur celui de la mission'); } }, 'Utiliser ce lieu dans tous les onglets') : null,
       h('div', { class: 'lbl' }, 'Notes'),
       h('textarea', { rows: 4, onchange: (e) => save({ notes: e.target.value }) }, ms.notes || '')),
     h('section', { class: 'card' },

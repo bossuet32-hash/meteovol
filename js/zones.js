@@ -1,6 +1,6 @@
 // Onglet « Zones » : restrictions SIA (ED-269) + ZICAD hors ligne, espaces protégés INPN et vigilance OSM en ligne.
 // L'analyse reprend celle de la Kobo (zones.lua).
-import { h, fill, settings, saveSettings, fetchCached, fmtDist, pickPlace, ago, toast, toL93 } from './util.js';
+import { h, fill, settings, saveSettings, fetchCached, fmtDist, pickPlace, ago, toast, toL93, setSite } from './util.js';
 import { ignLayer, orthoLayer, limitesLayer } from './map.js';
 
 export const SEV = { PROHIBITED: 4, ZICAD: 4, REQ_AUTHORISATION: 3, NOTAM: 3, CONDITIONAL: 2, INFO: 1 };
@@ -344,7 +344,7 @@ function zoneRow(e, withDist) {
 
 export async function render(root) {
   const S = settings();
-  const site = S.zonesSite || S.site;
+  const site = S.site;
   const radius = (S.radiusKm || 10) * 1000;
   fill(root, h('p', { class: 'muted' }, 'Analyse des zones…'));
   let R;
@@ -359,7 +359,7 @@ export async function render(root) {
     h('section', { class: `banner ${B.cls}` }, h('div', { class: 'ban-lab' }, B.lab), h('div', { class: 'ban-txt' }, h('b', {}, B.l1), h('div', { class: 'small' }, B.l2))),
     h('div', { class: 'row space' },
       h('div', { class: 'small muted' }, `${site.name} · ${site.lat.toFixed(5)}, ${site.lon.toFixed(5)} · L93 ${Math.round(l93.E)} / ${Math.round(l93.N)}`),
-      h('button', { class: 'btn small', onclick: async () => { const p = await pickPlace('Lieu de vol'); if (p) { saveSettings({ zonesSite: p }); render(root); } } }, 'Lieu…')),
+      h('button', { class: 'btn small', onclick: async () => { const p = await pickPlace('Lieu de vol'); if (p) { setSite(p); render(root); } } }, 'Lieu…')),
     h('div', { class: 'map-wrap' }, mapBox),
     h('p', { class: 'small muted' }, 'Touchez une zone de la carte ou de la liste pour la mettre en évidence · appui long ou « Analyser le centre » pour un autre point · rouge : interdit · orange : accord · bleu : conditions · violet : ZICAD · tireté : au-delà d\'une hauteur'),
     R.outdated ? h('p', { class: 'warn-txt' }, `Données SIA périmées (AIRAC ${R.meta.airac}, ${R.airac_age} jours) : mettre à jour le dossier data/zones.`) : null,
@@ -418,7 +418,7 @@ function drawMap(box, R, root) {
   L.circleMarker([R.lat, R.lon], { radius: 8, color: '#000', weight: 3, fillColor: '#fff', fillOpacity: 1 }).addTo(map).bindPopup('Point de vol');
   const analyseAt = (ll) => {
     const p = { name: `Point ${ll.lat.toFixed(4)}, ${ll.lng.toFixed(4)}`, lat: ll.lat, lon: ll.lng };
-    saveSettings({ zonesSite: p }); toast('Analyse du nouveau point…'); render(root);
+    setSite(p); toast('Analyse du nouveau point…'); render(root);
   };
   // appui long (ou clic droit) : analyser ce point ; bouton : analyser le centre (réticule)
   map.on('contextmenu', (ev) => analyseAt(ev.latlng));

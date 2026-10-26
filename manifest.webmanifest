@@ -3,7 +3,7 @@
   "short_name": "Météo vol",
   "description": "Compagnon de terrain du télépilote : METAR/TAF, bulletin, radar, zones de vol, dossiers mission.",
   "lang": "fr",
-  "start_url": "./#meteo",
+  "start_url": "./#lieu",
   "scope": "./",
   "display": "standalone",
   "background_color": "#111418",

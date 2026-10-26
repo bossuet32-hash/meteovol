@@ -30,6 +30,12 @@ const DEFAULTS = {
 export function settings() {
   try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem('mv.settings') || '{}') }; } catch { return { ...DEFAULTS }; }
 }
+// Lieu de vol commun à tous les onglets (+ historique des lieux récents)
+export function setSite(p) {
+  const S = settings();
+  const recent = [p, ...(S.recent || []).filter((r) => Math.abs(r.lat - p.lat) > 1e-4 || Math.abs(r.lon - p.lon) > 1e-4)].slice(0, 8);
+  return saveSettings({ site: { name: p.name, lat: p.lat, lon: p.lon }, zonesSite: null, recent });
+}
 export function saveSettings(patch) {
   const s = { ...settings(), ...patch };
   try { localStorage.setItem('mv.settings', JSON.stringify(s)); } catch { /* stockage indisponible */ }

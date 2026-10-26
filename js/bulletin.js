@@ -1,5 +1,5 @@
 // Onglet « Bulletin » : prévisions Météo-France (AROME/ARPEGE via Open-Meteo), créneaux volables, radar RainViewer.
-import { h, fill, settings, fetchCached, dir8, hh, dateFr, jour, fmtNum, ago, pickPlace, saveSettings } from './util.js';
+import { h, fill, settings, fetchCached, dir8, hh, dateFr, jour, fmtNum, ago, pickPlace, saveSettings, setSite } from './util.js';
 import { ignLayer } from './map.js';
 
 const LVL = ['ok', 'warn', 'bad'];
@@ -139,7 +139,7 @@ export async function render(root) {
       h('div', { class: 'sum-row' },
         h('div', {}, h('div', { class: 'lbl' }, (sameDay(day0, Date.now()) ? "Aujourd'hui" : 'Demain') + ' · ' + dateFr(day0)),
           h('div', { class: 'small muted' }, `${site.name} · AROME 1,3 km puis ARPEGE (Météo-France) · ${res.live ? 'mis à jour ' + ago(res.t) : 'hors ligne, ' + ago(res.t)}`)),
-        h('button', { class: 'btn small', onclick: async () => { const p = await pickPlace('Lieu du bulletin'); if (p) { saveSettings({ site: p }); render(root); } } }, 'Lieu…')),
+        h('button', { class: 'btn small', onclick: async () => { const p = await pickPlace('Lieu du bulletin'); if (p) { setSite(p); render(root); } } }, 'Lieu…')),
       S0 ? h('div', {},
         h('div', { class: 'grid4' },
           h('div', {}, h('div', { class: 'lbl' }, 'Temp.'), h('b', {}, `${Math.round(S0.tmin)}° / ${Math.round(S0.tmax)}°`)),
