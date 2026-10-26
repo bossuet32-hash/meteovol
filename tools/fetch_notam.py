@@ -55,11 +55,56 @@ for la, lo in centres:
         }
     time.sleep(1)
 
-fr = {k: v for k, v in notams.items() if (v.get("fir") or "").startswith("LF") or (v.get("loc") or "").startswith("LF")}
-out = {"generated": int(time.time()), "env": ENV, "count_all": len(notams), "notams": list(fr.values())}
+import re
+
+def dms(tok):
+    """« 432906N » / « 0012627W » / « 4323N » -> degrés décimaux"""
+    m = re.match(r"^(\d{2,3})(\d{2})(\d{2}(?:\.\d+)?)?([NSEW])$", tok)
+    if not m:
+        return None
+    v = int(m.group(1)) + int(m.group(2)) / 60 + (float(m.group(3)) / 3600 if m.group(3) else 0)
+    return -v if m.group(4) in "SW" else v
+
+def qcentre(c):
+    m = re.match(r"^(\d{4}[NS])(\d{5}[EW])$", c or "")
+    return (dms(m.group(1)), dms(m.group(2))) if m else None
+
+def polygon(text):
+    pts = re.findall(r"(\d{6}(?:\.\d+)?[NS])\s*(\d{7}(?:\.\d+)?[EW])", text or "")
+    ring = [[round(dms(b), 5), round(dms(a), 5)] for a, b in pts]
+    return ring if len(ring) >= 3 else None
+
+def point(text):
+    m = re.search(r"PSN\s*:?\s*(\d{6}(?:\.\d+)?[NS])\s*(\d{7}(?:\.\d+)?[EW])", text or "")
+    return (dms(m.group(1)), dms(m.group(2))) if m else None
+
+KEEP = ("QR", "QW", "QOB")      # zones réglementées/temporaires, avertissements (drones, parachutage, voltige…), obstacles
+out_list = []
+for v in notams.values():
+    if not ((v.get("fir") or "").startswith("LF") or (v.get("loc") or "").startswith("LF")):
+        continue
+    q = v.get("q") or ""
+    if not q.startswith(KEEP):
+        continue
+    fl = v.get("fl") or [None, None]
+    if fl[0] and str(fl[0]).isdigit() and int(fl[0]) > 10:      # commence au-dessus du FL010 : sans effet pour un drone
+        continue
+    txt = (v.get("text") or "").replace("&apos;", "'").replace("&quot;", '"').replace("\r\n", "\n").strip()
+    c = point(txt) or qcentre(v.get("coord"))
+    if not c:
+        continue
+    rr = v.get("r")
+    e = {"id": v["id"], "num": v["num"], "loc": v.get("loc"), "q": q, "from": v.get("from"), "to": v.get("to"),
+         "sched": v.get("sched"), "lo": v.get("lo"), "up": v.get("up"), "lat": round(c[0], 5), "lon": round(c[1], 5),
+         "r": float(rr) if rr and str(rr).replace(".", "").isdigit() else None, "text": txt[:900]}
+    poly = polygon(txt)
+    if poly:
+        e["poly"] = poly
+    out_list.append(e)
+out = {"generated": int(time.time()), "env": ENV, "count_all": len(notams), "notams": out_list}
 with open("data/notam_fr.json", "w", encoding="utf-8") as fh:
     json.dump(out, fh, ensure_ascii=False, separators=(",", ":"))
-print(f"{ENV} : {len(centres)} cercles, {len(notams)} NOTAM reçus, {len(fr)} français, {len(errors)} erreur(s)")
+print(f"{ENV} : {len(centres)} cercles, {len(notams)} NOTAM reçus, {len(out_list)} retenus pour les drones, {len(errors)} erreur(s)")
 for e in errors[:5]:
     print("  ", e)
 firs = {}
