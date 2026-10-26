@@ -137,3 +137,7 @@ ul.files .acts { margin-left: auto; }
 .map { scroll-margin-top: calc(64px + var(--safe-t)); }
 
 .card.peuplee { border-left: 6px solid #ad1457; } .card.peuplee.on { background: color-mix(in srgb, #ad1457 8%, var(--card)); }
+
+pre.notam-txt { white-space: pre-wrap; font: 12px/1.35 ui-monospace, Menlo, monospace; background: var(--bg); padding: 6px 8px; border-radius: 8px; margin: 4px 0; overflow-wrap: anywhere; }
+details.obst summary { cursor: pointer; color: var(--accent); margin: 6px 0; }
+.obst-ic { color: #e65100; font: 900 15px/16px sans-serif; text-align: center; text-shadow: 0 0 2px #fff, 0 0 2px #fff; }

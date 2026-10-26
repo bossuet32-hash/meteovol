@@ -3,6 +3,7 @@ import * as M from './metar.js';
 import { pickStations } from './meteo.js';
 import * as B from './bulletin.js';
 import * as Z from './zones.js';
+import { loadNotams, nearby as notamsNear, period as notamPeriod, limits as notamLimits } from './notam.js';
 import { fetchCached, settings, toL93, hhmm, hh, jour, dateFr, fmtDist, dir8, fmtNum } from './util.js';
 
 // Helvetica (jsPDF) ne connaît que le jeu Windows-1252 : on remplace le reste
@@ -192,9 +193,25 @@ export async function report(site, title = 'Dossier mission', flightDate = null)
     }
     const info = R.list.filter((e) => e.above120);
     if (info.length) txt('Sans effet sous 120 m : ' + info.map((e) => `${Z.zname(e.z)} (dès ${Math.round(e.floor)} m)`).join(' · '), 8);
+    // NOTAM : sur la journée du vol si elle est connue, sinon les 48 h à venir
+    let ns = R.notams;
+    if (flightDate) {
+      const d0 = Date.parse(flightDate + 'T00:00:00'), d1 = d0 + 86400e3;
+      try { ns = notamsNear(await loadNotams(), site.lat, site.lon, (S.radiusKm || 10) * 1000, d0, d1); } catch { /* */ }
+    }
+    if (ns) {
+      if (y > 250) { doc.addPage(); y = 20; }
+      txt(`NOTAM ${flightDate ? 'du ' + new Date(flightDate + 'T12:00').toLocaleDateString('fr-FR') : 'actifs dans les 48 h'} (source FAA NMS${R.notamMeta && R.notamMeta.env !== 'prod' ? ', environnement de test' : ''}) : ${ns.filter((n) => !n.q.startsWith('QOB')).length} restriction(s)/activité(s), ${ns.filter((n) => n.q.startsWith('QOB')).length} obstacle(s)`, 9.5, true);
+      for (const n of ns.filter((x) => !x.q.startsWith('QOB')).slice(0, 12)) {
+        txt(`${n.inside ? 'AU POINT' : fmtDist(n.dist) + ' ' + n.dir}  ${n.kind} · ${n.num} ${n.loc || ''} · ${notamPeriod(n)} ${notamLimits(n) ? '· ' + notamLimits(n) : ''}`, 8.5, true);
+        txt((n.text || '').replace(/\s+/g, ' ').slice(0, 260), 7.5);
+      }
+      const ob = ns.filter((x) => x.q.startsWith('QOB'));
+      if (ob.length) txt('Obstacles : ' + ob.slice(0, 10).map((n) => `${fmtDist(n.dist)} ${n.dir} ${n.heightFt ? n.heightFt + ' ft' : ''}`).join(' · '), 8);
+    } else txt('NOTAM non disponibles : vérifier SOFIA-Briefing.', 9, true);
     if (R.protected && R.protected.length) txt('Espaces protégés : ' + R.protected.slice(0, 6).map((p) => `${p.label} ${p.name} (${fmtDist(p.dist)})`).join(' · '), 8);
     if (R.osm && R.osm.length) txt('Vigilance OSM : ' + R.osm.slice(0, 8).map((o) => `${o.label}${o.name ? ' ' + o.name : ''} (${fmtDist(o.dist)} ${o.dir || ''})`).join(' · '), 8);
-    txt(`NOTAM non intégrés : vérifier SOFIA-Briefing pour la date du vol. Données SIA ${R.meta?.source || '-'} (AIRAC ${R.meta?.airac || '-'})${R.outdated ? ' PÉRIMÉES' : ''}, ZICAD, OSM, INPN, IGN · sol ${R.ground != null ? Math.round(R.ground) + ' m' : 'inconnu'}.`, 8);
+    txt(`Vérification officielle des NOTAM et SUP AIP : SOFIA-Briefing. Données SIA ${R.meta?.source || '-'} (AIRAC ${R.meta?.airac || '-'})${R.outdated ? ' PÉRIMÉES' : ''}, ZICAD, OSM, INPN, IGN · sol ${R.ground != null ? Math.round(R.ground) + ' m' : 'inconnu'}.`, 8);
   } catch (e) { txt('Zones indisponibles : ' + e.message, 11, true); }
   footer();
   return doc.output('blob');

@@ -2,6 +2,7 @@
 // L'analyse reprend celle de la Kobo (zones.lua).
 import { h, fill, settings, saveSettings, fetchCached, fmtDist, pickPlace, ago, toast, toL93, setSite, addWorkingDays, dateLongFr } from './util.js';
 import { ignLayer, orthoLayer, limitesLayer } from './map.js';
+import { loadNotams, nearby as notamsNear, period as notamPeriod, limits as notamLimits } from './notam.js';
 
 export const SEV = { PROHIBITED: 4, ZICAD: 4, REQ_AUTHORISATION: 3, NOTAM: 3, CONDITIONAL: 2, INFO: 1 };
 export const LABEL = { PROHIBITED: 'INTERDIT', REQ_AUTHORISATION: 'AUTORISATION', CONDITIONAL: 'CONDITIONS', ZICAD: 'PRISE DE VUE INTERDITE', NOTAM: 'TEMPORAIRE', INFO: 'INFO', NONE: 'AUCUNE ZONE' };
@@ -261,6 +262,10 @@ export async function collect(site, radius) {
   R.list = an.list; R.verdict = an.V;
   if (ov.status === 'fulfilled') Object.assign(R, parseOSM(ov.value.data, site.lat, site.lon));
   if (pr.status === 'fulfilled') R.protected = pr.value;
+  try {
+    const nd = await loadNotams();
+    if (nd) { R.notams = notamsNear(nd, site.lat, site.lon, radius); R.notamMeta = { t: nd.generated * 1000, env: nd.env, live: nd.live }; }
+  } catch { /* NOTAM indisponibles */ }
   if (m && m.airac) {
     const t = Date.parse(m.airac + 'T12:00:00Z');
     R.airac_age = Math.floor((Date.now() - t) / 86400e3);
@@ -289,6 +294,8 @@ export function bannerInfo(R) {
     if (V.level === 'CONDITIONAL' && e && e.z.type === 'AGGLO') { lab = 'ZONE PEUPLÉE'; l2 = `Déclaration en préfecture ≥ ${PEUPLEE_DELAI} jours ouvrés avant le vol (AlphaTango)`; }
     if (V.zones.length > 1) l2 += ` · ${V.zones.length} zones au point`;
   }
+  const nIn = (R.notams || []).filter((n) => n.inside && n.sev >= 2);
+  if (nIn.length) { l2 += ` · ${nIn.length} NOTAM actif(s) au point`; if (cls === 'ok') cls = 'warn'; if (V.level === 'NONE') lab = 'NOTAM'; }
   const peuplee = V.zones.find((x) => x.z.type === 'AGGLO');
   if (peuplee && V.level !== 'CONDITIONAL') l2 += ' · zone peuplée : déclaration préfecture';
   return { lab, l1, l2, cls, peuplee: !!peuplee };
@@ -371,6 +378,37 @@ export function showOnMap(item) {
   setTimeout(() => L.popup({ autoPan: true, autoPanPaddingTopLeft: [10, 10], maxWidth: 260, className: 'zpop' }).setLatLng(L.latLng(bounds.getNorth(), pos.lng)).setContent(html).openOn(map), 350);
 }
 
+function notamCard(R) {
+  const sofia = h('a', { href: 'https://sofia-briefing.aviation-civile.gouv.fr/', target: '_blank', rel: 'noopener' }, 'SOFIA-Briefing');
+  if (!R.notams) return h('section', { class: 'card' }, h('div', { class: 'lbl' }, 'NOTAM'), h('p', { class: 'small' }, 'NOTAM indisponibles (pas encore téléchargés). Vérifier sur ', sofia, '.'));
+  const ns = R.notams, obst = ns.filter((n) => n.q.startsWith('QOB')), other = ns.filter((n) => !n.q.startsWith('QOB'));
+  const row = (n) => h('div', { class: 'zrow click', onclick: (ev) => { if (!ev.target.closest('details')) showNotam(n); } },
+    h('div', { class: 'zd' }, h('b', {}, n.inside ? 'au point' : fmtDist(n.dist)), h('div', { class: 'small muted' }, n.inside ? '' : n.dir)),
+    h('div', { class: 'zn' }, h('b', {}, n.kind), h('div', { class: 'small muted' }, `${n.num} · ${n.loc || ''}`)),
+    h('div', { class: 'zt' }, h('span', { class: `tag ${n.sev >= 3 ? 'solid r-PROHIBITED' : n.sev === 2 ? 'solid r-REQ_AUTHORISATION' : ''}` }, n.sev >= 3 ? 'RESTRICTION' : n.sev === 2 ? 'ACTIVITÉ' : 'INFO'), h('div', { class: 'small' }, notamLimits(n))),
+    h('div', { class: 'zc small' }, notamPeriod(n), h('details', {}, h('summary', {}, 'Texte du NOTAM'), h('pre', { class: 'notam-txt' }, n.text || ''))));
+  const age = R.notamMeta ? Math.round((Date.now() - R.notamMeta.t) / 60000) : null;
+  return h('section', { class: 'card' },
+    h('div', { class: 'lbl' }, `NOTAM actifs dans les 48 h · ${other.length}${obst.length ? ` + ${obst.length} obstacle(s)` : ''}`),
+    other.length ? other.slice(0, 15).map(row) : h('p', { class: 'small' }, 'Aucune restriction ni activité temporaire signalée dans le rayon.'),
+    obst.length ? h('details', { class: 'obst' }, h('summary', { class: 'small' }, `Obstacles signalés (grues…) · ${obst.length}`), ...obst.slice(0, 20).map(row)) : null,
+    h('p', { class: 'small muted' }, `Source : FAA NMS${R.notamMeta && R.notamMeta.env !== 'prod' ? ' (environnement de test)' : ''}, liste mise à jour ${age != null ? (age < 90 ? 'il y a ' + age + ' min' : 'il y a ' + Math.round(age / 60) + ' h') : '?'}. Vérification officielle : `, sofia, ' pour la date et l\'heure du vol.'));
+}
+
+// NOTAM sur la carte : mise en évidence et bulle
+function showNotam(n) {
+  if (!map) return;
+  if (hl) { hl.remove(); hl = null; }
+  hl = L.layerGroup().addTo(map);
+  const lay = n.area.t === 'P' ? L.polygon(n.area.rings[0].map((p) => [p[1], p[0]]), { color: '#000', weight: 3, fillColor: '#ffd400', fillOpacity: 0.15, interactive: false })
+    : L.circle([n.lat, n.lon], { radius: Math.max(n.area.r, 150), color: '#000', weight: 3, fillColor: '#ffd400', fillOpacity: 0.15, interactive: false });
+  lay.addTo(hl);
+  document.querySelector('.zones-map')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  map.fitBounds(lay.getBounds(), { maxZoom: 14, paddingTopLeft: [20, 140], paddingBottomRight: [20, 40] });
+  setTimeout(() => L.popup({ maxWidth: 270, className: 'zpop' }).setLatLng(lay.getBounds().getNorth ? [lay.getBounds().getNorth(), n.lon] : [n.lat, n.lon])
+    .setContent(`<b>${n.kind}</b> · ${n.num}<br>${notamPeriod(n)}<br>${notamLimits(n)}<br><small>${(n.text || '').slice(0, 300).replace(/</g, '&lt;')}</small>`).openOn(map), 350);
+}
+
 function zoneRow(e, withDist) {
   const a = e.z.auth || {};
   const row = h('div', { class: 'zrow click', role: 'button', tabindex: '0', title: 'Voir sur la carte',
@@ -423,8 +461,7 @@ export async function render(root) {
     h('section', { class: 'card' }, h('div', { class: 'lbl' }, `À proximité (${S.radiusKm || 10} km) · ${near.length} zone(s)`),
       near.length ? near.map((e) => zoneRow(e, true)) : h('p', {}, 'Aucune autre zone dans le rayon.'),
       info.length ? h('p', { class: 'small muted' }, 'Sans effet sous 120 m : ', ...info.map((e) => h('button', { class: 'chip', onclick: () => showOnMap(e) }, `${zname(e.z)} (dès ${Math.round(e.floor)} m)`))) : null),
-    h('section', { class: 'card' }, h('div', { class: 'lbl' }, 'NOTAM'),
-      h('p', { class: 'small' }, 'Les restrictions temporaires ne sont pas intégrées : vérifier avant le vol sur ', h('a', { href: 'https://sofia-briefing.aviation-civile.gouv.fr/', target: '_blank', rel: 'noopener' }, 'SOFIA-Briefing'), ' pour la date et l\'heure du vol.')),
+    notamCard(R),
     h('section', { class: 'card' }, h('div', { class: 'lbl' }, `Vigilance OpenStreetMap · ${R.osm ? R.osm.length : '—'}`),
       R.osm ? (R.osm.length ? h('ul', { class: 'plain' }, ...R.osm.slice(0, 12).map((o) => h('li', o.lat != null ? { class: 'click', onclick: () => showOnMap(o) } : {}, h('b', {}, fmtDist(o.dist) + ' ' + (o.dir || '')), ' ', o.label, o.name ? ' · ' + o.name : '', o.icao ? ` (${o.icao})` : ''))) : h('p', { class: 'small' }, 'Rien de signalé (hélistations, ULM, lignes HT, éoliennes, prisons…).'))
         : h('p', { class: 'small muted' }, 'Non disponible (pas de réseau).')),
@@ -441,8 +478,8 @@ function drawMap(box, R, root) {
   map = L.map(box, { preferCanvas: true, zoomControl: true }).setView([R.lat, R.lon], 11);
   const plan = ignLayer().addTo(map), ortho = orthoLayer();
   const lim = limitesLayer().addTo(map);
-  const zl = L.layerGroup().addTo(map), pl = L.layerGroup().addTo(map), ol = L.layerGroup().addTo(map);
-  L.control.layers({ 'Plan IGN': plan, 'Photo aérienne': ortho }, { 'Limites communales': lim, 'Zones SIA / ZICAD': zl, 'Espaces protégés': pl, 'Vigilance OSM': ol }, { collapsed: true }).addTo(map);
+  const zl = L.layerGroup().addTo(map), pl = L.layerGroup().addTo(map), ol = L.layerGroup().addTo(map), nl = L.layerGroup().addTo(map);
+  L.control.layers({ 'Plan IGN': plan, 'Photo aérienne': ortho }, { 'Limites communales': lim, 'Zones SIA / ZICAD': zl, 'NOTAM': nl, 'Espaces protégés': pl, 'Vigilance OSM': ol }, { collapsed: true }).addTo(map);
   L.control.scale({ imperial: false }).addTo(map);
   const order = [...R.list].sort((a, b) => a.sev - b.sev);
   const buffers = [];
@@ -472,6 +509,16 @@ function drawMap(box, R, root) {
   for (const p of R.protected || []) {
     L.polygon(p.geom.rings.map((r) => r.map((q) => [q[1], q[0]])), { color: '#2e7d32', weight: 1.4, dashArray: '2 4', fillColor: '#2e7d32', fillOpacity: 0.06 })
       .bindPopup(`<b>${p.name}</b><br>${p.label}`).addTo(pl);
+  }
+  for (const n of R.notams || []) {
+    const pop = `<b>${n.kind}</b> · ${n.num}<br>${notamPeriod(n)}<br>${notamLimits(n)}`;
+    if (n.q.startsWith('QOB')) {
+      L.marker([n.lat, n.lon], { icon: L.divIcon({ className: 'obst-ic', html: '▲', iconSize: [16, 16] }) }).bindPopup(pop).addTo(nl);
+    } else if (n.area.t === 'P') {
+      L.polygon(n.area.rings[0].map((p) => [p[1], p[0]]), { color: '#e65100', weight: 2, dashArray: '8 4', fillColor: '#e65100', fillOpacity: 0.1 }).bindPopup(pop).addTo(nl);
+    } else {
+      L.circle([n.lat, n.lon], { radius: n.area.r, color: '#e65100', weight: 2, dashArray: '8 4', fillColor: '#e65100', fillOpacity: 0.08 }).bindPopup(pop).addTo(nl);
+    }
   }
   const SYM = { HEL: 'H', ULM: 'U', AD: 'A', PRI: 'P', NUC: 'N', MIL: 'M' };
   for (const o of R.osm || []) {

@@ -1,8 +1,8 @@
 // Service worker : l'app et les zones fonctionnent hors ligne ; fond de carte IGN mis en cache au fil de l'usage.
-const VERSION = 'mv-2026-10-26e';
+const VERSION = 'mv-2026-10-26f';
 const SHELL = [
   './', 'index.html', 'css/app.css', 'manifest.webmanifest',
-  'js/app.js', 'js/util.js', 'js/metar.js', 'js/meteo.js', 'js/bulletin.js', 'js/zones.js', 'js/map.js', 'js/mission.js', 'js/pdf.js', 'js/lieu.js', 'js/rtk.js', 'data/centipede.json',
+  'js/app.js', 'js/util.js', 'js/metar.js', 'js/meteo.js', 'js/bulletin.js', 'js/zones.js', 'js/map.js', 'js/mission.js', 'js/pdf.js', 'js/lieu.js', 'js/rtk.js', 'js/notam.js', 'data/centipede.json',
   'vendor/leaflet.js', 'vendor/leaflet.css', 'vendor/jspdf.umd.min.js',
   'vendor/images/layers.png', 'vendor/images/layers-2x.png', 'vendor/images/marker-icon.png',
   'data/aerodromes.json', 'data/zones/meta.json', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png',
