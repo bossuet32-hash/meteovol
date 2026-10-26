@@ -43,7 +43,7 @@ export function nearby(data, lat, lon, radius, start = Date.now(), end = Date.no
     if (d > radius) continue;
     const [x, y] = P(n.lon, n.lat);
     const k = kind(n.q);
-    const h = (n.text || '').match(/HEIGHT\s*:?\s*(\d+)\s*FT/i);
+    const h = (n.text || '').match(/(?:HEIGHT|HGT)\s*:?\s*(\d+)\s*FT/i);
     out.push({ ...n, dist: d, inside: d === 0, area, kind: k.label, sev: k.sev, heightFt: h ? +h[1] : null, perm: n.to === 'PERM',
       dir: ['N', 'NE', 'E', 'SE', 'S', 'SO', 'O', 'NO'][Math.floor((((Math.atan2(x, y) * 180) / Math.PI + 360) % 360 + 22.5) / 45) % 8] });
   }
@@ -51,7 +51,7 @@ export function nearby(data, lat, lon, radius, start = Date.now(), end = Date.no
   return out;
 }
 
-const fr = (s) => (s ? new Date(s).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '');
+const fr = (s) => { if (!s) return ''; const d = new Date(s); return d.toLocaleString('fr-FR', { day: 'numeric', month: 'short', ...(d.getFullYear() !== new Date().getFullYear() ? { year: 'numeric' } : {}), hour: '2-digit', minute: '2-digit' }); };
 export function period(n) {
   return `${n.from ? 'du ' + fr(n.from) : ''}${n.perm ? ' · permanent' : n.to ? ' au ' + fr(n.to) : ''}${n.sched ? ' · horaires ' + n.sched + ' UTC' : ''}`;
 }
