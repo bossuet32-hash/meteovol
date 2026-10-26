@@ -3,7 +3,7 @@ Exécuté par GitHub Actions ; identifiants dans les secrets du dépôt (NMS_CLI
 jamais dans le code. Environnement : NMS_ENV = staging (test) ou prod."""
 import base64, json, os, sys, time, urllib.parse, urllib.request
 
-ENV = os.environ.get("NMS_ENV", "staging")
+ENV = os.environ.get("NMS_ENV", "staging")  # staging = environnement de test FAA
 HOST = {"staging": "https://api-staging.cgifederal-aim.com", "fit": "https://api-fit.cgifederal-aim.com",
         "prod": "https://api-nms.aim.faa.gov"}[ENV]
 CID, SEC = os.environ.get("NMS_CLIENT_ID", ""), os.environ.get("NMS_CLIENT_SECRET", "")
