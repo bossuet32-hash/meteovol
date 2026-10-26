@@ -5,12 +5,14 @@ import * as bulletin from './bulletin.js';
 import * as zones from './zones.js';
 import * as mission from './mission.js';
 import * as lieu from './lieu.js';
+import * as rtk from './rtk.js';
 
 const TABS = {
   lieu: { label: 'Lieu', icon: '⌖', mod: lieu },
   meteo: { label: 'Météo', icon: '✈︎', mod: meteo },
   bulletin: { label: 'Bulletin', icon: '☁︎', mod: bulletin },
   zones: { label: 'Zones', icon: '⬡', mod: zones },
+  rtk: { label: 'RTK', icon: '◎', mod: rtk },
   missions: { label: 'Missions', icon: '▤', mod: mission },
   reglages: { label: 'Réglages', icon: '⚙︎', mod: { render: settingsView } },
 };

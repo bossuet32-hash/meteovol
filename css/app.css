@@ -130,3 +130,7 @@ ul.files .acts { margin-left: auto; }
 .sumcard { display: block; width: 100%; text-align: left; font: inherit; color: var(--ink); cursor: pointer; }
 .sumcard .zgo { margin-top: 6px; }
 .tabbar button { font-size: 10.5px; }
+
+.rtk-map { height: 48vh; min-height: 280px; }
+.badge.sm { font-size: 11px; padding: 1px 6px; vertical-align: 2px; }
+.tabbar button { font-size: 10px; } .tabbar button .ti { font-size: 18px; }
