@@ -3,6 +3,35 @@ import { h, fill, settings, fetchCached, distKm, bearing, dir8, fmtNum, ago, toa
 import { ignLayer, orthoLayer } from './map.js';
 
 let map = null, hl = null;
+
+// Couverture du réseau : disques de 20 km (bonne précision) et 50 km (limite) autour des bases actives,
+// dessinés tuile par tuile en un seul remplissage par niveau (pas d'assombrissement aux recouvrements).
+function coverageLayer(bases) {
+  const R2 = 6378137 * 2 * Math.PI;
+  return L.GridLayer.extend({
+    createTile(coords) {
+      const tile = document.createElement('canvas');
+      const size = this.getTileSize();
+      tile.width = size.x; tile.height = size.y;
+      const g = tile.getContext('2d');
+      const z = coords.z, nw = coords.scaleBy(size);
+      const levels = [[50000, 'rgba(46,157,74,0.16)'], [20000, 'rgba(46,157,74,0.24)']];
+      for (const [r, col] of levels) {
+        g.beginPath();
+        for (const b of bases) {
+          const p = this._map.project([b.lat, b.lon], z).subtract(nw);
+          const rp = r / ((R2 * Math.cos((b.lat * Math.PI) / 180)) / (256 * 2 ** z));
+          if (p.x + rp < 0 || p.y + rp < 0 || p.x - rp > size.x || p.y - rp > size.y) continue;
+          g.moveTo(p.x + rp, p.y);
+          g.arc(p.x, p.y, rp, 0, 2 * Math.PI);
+        }
+        g.fillStyle = col;
+        g.fill('nonzero');
+      }
+      return tile;
+    },
+  });
+}
 const CASTER = { host: 'crtk.net', port: 2101, user: 'centipede', pass: 'centipede' };
 
 function quality(d) {
@@ -63,7 +92,15 @@ export async function render(root) {
         best ? h('button', { class: 'btn small', onclick: () => copy(best.mp) }, 'Copier ' + best.mp) : null),
       h('p', { class: 'small muted' }, 'Identifiants publics du réseau ouvert Centipède. Les coordonnées obtenues sont en RGF93 ; hauteur ellipsoïdale à convertir en NGF-IGN69 (grille RAF20) pour les GCP.')),
     h('div', { class: 'map-wrap' }, mapBox),
-    h('p', { class: 'small muted' }, 'Cercles : 20, 35 et 50 km autour du point de vol · vert : base active · gris : éteinte'),
+    h('p', { class: 'small muted' }, 'Couverture : vert foncé < 20 km d\'une base active (précision centimétrique), vert clair < 50 km (limite) · cercles tiretés : 20, 35, 50 km du point de vol · points verts : bases actives, gris : éteintes'),
+    h('section', { class: 'card' }, h('div', { class: 'lbl' }, 'Couverture au point de vol'),
+      h('div', { class: 'grid3 small' },
+        h('div', {}, h('div', { class: 'lbl' }, '< 20 km'), h('b', {}, act.filter((b) => b.d <= 20).length + ' base(s)')),
+        h('div', {}, h('div', { class: 'lbl' }, '< 35 km'), h('b', {}, act.filter((b) => b.d <= 35).length + ' base(s)')),
+        h('div', {}, h('div', { class: 'lbl' }, '< 50 km'), h('b', {}, act.filter((b) => b.d <= 50).length + ' base(s)'))),
+      h('p', { class: 'small' }, !best ? 'Point hors couverture : base locale ou post-traitement nécessaire.'
+        : best.d <= 20 ? 'Point bien couvert : RTK centimétrique attendu.' + (act.filter((b) => b.d <= 20).length > 1 ? ' Base de secours disponible.' : ' Une seule base proche : prévoir une solution de repli.')
+        : best.d <= 50 ? 'Couverture partielle : fix plus long à obtenir, précision dégradée. Envisager une base locale.' : 'Hors couverture utile (> 50 km).')),
     h('section', { class: 'card' }, h('div', { class: 'lbl' }, `Bases actives à moins de 80 km · ${act.length}`),
       act.length ? act.slice(0, 15).map(row) : h('p', { class: 'small' }, 'Aucune.')),
     near.length > act.length ? h('section', { class: 'card' }, h('div', { class: 'lbl' }, `Bases éteintes à proximité · ${near.length - act.length}`),
@@ -73,10 +110,12 @@ export async function render(root) {
   if (map) { map.remove(); map = null; }
   map = L.map(mapBox, { preferCanvas: true }).setView([site.lat, site.lon], 9);
   const plan = ignLayer().addTo(map);
-  L.control.layers({ 'Plan IGN': plan, 'Photo aérienne': orthoLayer() }, null, { collapsed: true }).addTo(map);
+  const Cov = coverageLayer(all.filter((b) => b.on));
+  const cov = new Cov({ zIndex: 4, opacity: 1 }).addTo(map);
+  L.control.layers({ 'Plan IGN': plan, 'Photo aérienne': orthoLayer() }, { 'Couverture du réseau': cov }, { collapsed: true }).addTo(map);
   L.control.scale({ imperial: false }).addTo(map);
   for (const [r, c] of [[20, '#2e7d32'], [35, '#2e7d32'], [50, '#c25e00']]) L.circle([site.lat, site.lon], { radius: r * 1000, color: c, weight: 1.2, dashArray: '5 5', fill: false, interactive: false }).addTo(map);
-  for (const b of all.filter((x) => x.d <= 200)) {
+  for (const b of all.filter((x) => x.d <= 300)) {
     L.circleMarker([b.lat, b.lon], { radius: b.on ? 7 : 5, color: '#000', weight: 1.5, fillColor: b.on ? '#2e9d4a' : '#9aa4b0', fillOpacity: 1 })
       .bindPopup(`<b>${b.mp}</b> · ${b.on ? 'active' : 'éteinte'}<br>${fmtNum(b.d)} km ${b.dir}<br><small>${b.rx || ''}${b.gnss ? ' · ' + b.gnss : ''}</small>`)
       .on('click', () => { const r = rows.get(b.mp); if (r) { r.classList.remove('flash'); void r.offsetWidth; r.classList.add('flash'); } })

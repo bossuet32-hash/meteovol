@@ -134,3 +134,4 @@ ul.files .acts { margin-left: auto; }
 .rtk-map { height: 48vh; min-height: 280px; }
 .badge.sm { font-size: 11px; padding: 1px 6px; vertical-align: 2px; }
 .tabbar button { font-size: 10px; } .tabbar button .ti { font-size: 18px; }
+.map { scroll-margin-top: calc(64px + var(--safe-t)); }
