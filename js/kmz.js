@@ -106,15 +106,14 @@ function placemark(w, idx, st, opt) {
   const turn = opt.straight ? 'toPointAndStopWithDiscontinuityCurvature' : 'toPointAndStopWithContinuityCurvature';
   const acts = [];
   let aid = 0;
-  if (w.pitch != null && w.pitch !== st.pitch) {
-    acts.push(`${i}    <wpml:action>
+  const rot = (pitch) => `${i}    <wpml:action>
 ${i}      <wpml:actionId>${aid++}</wpml:actionId>
 ${i}      <wpml:actionActuatorFunc>gimbalRotate</wpml:actionActuatorFunc>
 ${i}      <wpml:actionActuatorFuncParam>
 ${i}        <wpml:gimbalHeadingYawBase>aircraft</wpml:gimbalHeadingYawBase>
 ${i}        <wpml:gimbalRotateMode>absoluteAngle</wpml:gimbalRotateMode>
 ${i}        <wpml:gimbalPitchRotateEnable>1</wpml:gimbalPitchRotateEnable>
-${i}        <wpml:gimbalPitchRotateAngle>${f1(w.pitch)}</wpml:gimbalPitchRotateAngle>
+${i}        <wpml:gimbalPitchRotateAngle>${f1(pitch)}</wpml:gimbalPitchRotateAngle>
 ${i}        <wpml:gimbalRollRotateEnable>0</wpml:gimbalRollRotateEnable>
 ${i}        <wpml:gimbalRollRotateAngle>0</wpml:gimbalRollRotateAngle>
 ${i}        <wpml:gimbalYawRotateEnable>0</wpml:gimbalYawRotateEnable>
@@ -123,17 +122,19 @@ ${i}        <wpml:gimbalRotateTimeEnable>0</wpml:gimbalRotateTimeEnable>
 ${i}        <wpml:gimbalRotateTime>0</wpml:gimbalRotateTime>
 ${i}        <wpml:payloadPositionIndex>0</wpml:payloadPositionIndex>
 ${i}      </wpml:actionActuatorFuncParam>
-${i}    </wpml:action>`);
-    st.pitch = w.pitch;
-  }
-  if (w.photo) {
-    acts.push(`${i}    <wpml:action>
+${i}    </wpml:action>`;
+  const shoot = () => `${i}    <wpml:action>
 ${i}      <wpml:actionId>${aid++}</wpml:actionId>
 ${i}      <wpml:actionActuatorFunc>takePhoto</wpml:actionActuatorFunc>
 ${i}      <wpml:actionActuatorFuncParam>
 ${i}        <wpml:payloadPositionIndex>0</wpml:payloadPositionIndex>
 ${i}      </wpml:actionActuatorFuncParam>
-${i}    </wpml:action>`);
+${i}    </wpml:action>`;
+  // éventail : une rotation de nacelle puis une photo par angle ; sinon angle du point puis photo
+  const shots = w.photo ? (w.shots && w.shots.length ? w.shots : [w.pitch ?? 0]) : (w.pitch != null ? [w.pitch] : []);
+  for (const pitch of shots) {
+    if (pitch !== st.pitch) { acts.push(rot(pitch)); st.pitch = pitch; }
+    if (w.photo) acts.push(shoot());
   }
   const group = acts.length ? `
 ${i}  <wpml:actionGroup>
@@ -167,7 +168,7 @@ ${i}    <wpml:waypointTurnDampingDist>0</wpml:waypointTurnDampingDist>
 ${i}  </wpml:waypointTurnParam>
 ${i}  <wpml:useStraightLine>${opt.straight ? 1 : 0}</wpml:useStraightLine>${group}
 ${i}  <wpml:waypointGimbalHeadingParam>
-${i}    <wpml:waypointGimbalPitchAngle>${f1(w.pitch ?? 0)}</wpml:waypointGimbalPitchAngle>
+${i}    <wpml:waypointGimbalPitchAngle>${f1((w.shots && w.shots[0]) ?? w.pitch ?? 0)}</wpml:waypointGimbalPitchAngle>
 ${i}    <wpml:waypointGimbalYawAngle>0</wpml:waypointGimbalYawAngle>
 ${i}  </wpml:waypointGimbalHeadingParam>
 ${i}</Placemark>`;

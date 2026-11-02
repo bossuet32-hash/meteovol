@@ -7,7 +7,7 @@ import { buildKmz, readTemplate } from './kmz.js';
 
 const WFS = 'https://data.geopf.fr/wfs/ows?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetFeature&SRSNAME=CRS:84&OUTPUTFORMAT=application/json&TYPENAMES=BDTOPO_V3:batiment';
 const ALTI = (lat, lon) => `https://data.geopf.fr/altimetrie/1.0/calcul/alti/rest/elevation.json?lon=${lon.toFixed(6)}&lat=${lat.toFixed(6)}&resource=ign_rge_alti_wld&zonly=true`;
-const KEY = 'mv.p3d';
+const KEY = 'mv.p3d.v2';
 
 const S = {
   feats: new Map(),      // cleabs -> feature
@@ -294,7 +294,7 @@ function renderAll() {
   const geo = wpsGeo(R, B);
   L.polyline([[S.takeoff.lat, S.takeoff.lon], ...geo.map((w) => [w.lat, w.lon]), [S.takeoff.lat, S.takeoff.lon]], { color: '#fff', weight: 1, opacity: 0.8, dashArray: '4 4' }).addTo(pathLayer);
   const grp = {}; R.groups.forEach((g) => (grp[g.nom] = g.type));
-  geo.forEach((w) => { if (w.photo) L.circleMarker([w.lat, w.lon], { radius: 3, weight: 1, color: '#fff', fillColor: col[grp[w.groupe]] || '#333', fillOpacity: 1 }).bindTooltip(`${w.groupe} · ${Math.round(w.h)} m · cap ${Math.round(w.yaw)}° · nacelle ${w.pitch}°`).addTo(pathLayer); });
+  geo.forEach((w) => { if (w.photo) L.circleMarker([w.lat, w.lon], { radius: 3, weight: 1, color: '#fff', fillColor: col[grp[w.groupe]] || '#333', fillOpacity: 1 }).bindTooltip(`${w.groupe} · ${Math.round(w.h)} m · cap ${Math.round(w.yaw)}° · nacelle ${w.shots ? w.shots.join(' / ') : w.pitch}°`).addTo(pathLayer); });
   const canvas = h('canvas', { class: 'p3d-canvas' });
   const min = Math.round(st.duree / 60);
   fill(els.res,
@@ -351,7 +351,14 @@ export async function render(root) {
     h('section', { class: 'card' }, h('div', { class: 'lbl' }, 'Bâtiment'), els.bat),
     h('section', { class: 'card' },
       h('div', { class: 'lbl' }, 'Acquisition · DJI Air 3S, caméra grand-angle 1" 50 Mpx'),
-      h('div', { class: 'row' }, chk('Façades', 'facade'), chk('Orbites', 'orbite'), chk('Toiture', 'toit'), chk('Rangée haute oblique', 'rangHaute')),
+      h('div', { class: 'row' }, chk('Façades', 'facade'), chk('Orbites', 'orbite'), chk('Toiture', 'toit')),
+      h('div', { class: 'lbl' }, 'Densité'),
+      h('div', { class: 'row' }, chk('Toiture en grille croisée', 'toitCroise'), chk('Toiture : 4 passes obliques', 'toitObliques')),
+      h('div', { class: 'row' }, chk('Façades : passes obliques ±' + S.P.facadeObliqueAngle + '°', 'facadeObliques'), chk('Façades : rangée haute oblique', 'rangHaute')),
+      h('label', {}, h('div', { class: 'lbl' }, 'Façades : prises par position (nacelle)'),
+        h('select', { onchange: (e) => { S.P.facadeNacelle = +e.target.value; saveP(); recompute(); } },
+          ...[[1, '1 · horizontale (0°)'], [2, '2 · horizontale + plongeante (0°, −30°)'], [3, '3 · montante, horizontale, plongeante (+15°, 0°, −30°)']]
+            .map(([v, t]) => h('option', { value: v, selected: S.P.facadeNacelle === v }, t)))),
       h('div', { class: 'grid2' },
         num('Résolution façades', 'gsdFacade', 0.5, 1, 20, 'mm/px'),
         num('Résolution toiture', 'gsdToit', 0.5, 2, 30, 'mm/px'),

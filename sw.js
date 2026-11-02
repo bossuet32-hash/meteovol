@@ -1,5 +1,5 @@
 // Service worker : l'app et les zones fonctionnent hors ligne ; fond de carte IGN mis en cache au fil de l'usage.
-const VERSION = 'mv-2026-11-02a';
+const VERSION = 'mv-2026-11-02b';
 const SHELL = [
   './', 'index.html', 'css/app.css', 'manifest.webmanifest',
   'js/app.js', 'js/util.js', 'js/metar.js', 'js/meteo.js', 'js/bulletin.js', 'js/zones.js', 'js/map.js', 'js/mission.js', 'js/pdf.js', 'js/lieu.js', 'js/rtk.js', 'js/notam.js', 'js/plan3d.js', 'js/planner.js', 'js/kmz.js', 'data/centipede.json',

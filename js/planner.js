@@ -137,9 +137,10 @@ function arc(C, r, n1, n2, step) {
 // T : { x, y, z } point de décollage (z sol NGF) ; P : paramètres
 export const DEFAUTS = {
   facade: true, orbite: true, toit: true,
-  gsdFacade: 5, ovH: 80, ovV: 70, rangHaute: true,
+  gsdFacade: 3, ovH: 85, ovV: 75, rangHaute: true,
   orbiteAnneaux: 2, orbiteDist: 0, ovOrbite: 85,
-  gsdToit: 8, ovToitAvant: 75, ovToitLat: 70,
+  gsdToit: 3, ovToitAvant: 80, ovToitLat: 75, toitCroise: true, toitObliques: true, toitObliquePitch: -55,
+  facadeNacelle: 2, facadeObliques: true, facadeObliqueAngle: 25,
   marge: 5, distMin: 8, hMinSol: 3, vitesse: 3, transit: 8, maxParMission: 200,
 };
 
@@ -204,8 +205,21 @@ export function plan(B, voisins, T, P0) {
       });
       // commencer par la rangée la plus proche de l'altitude courante, en serpentin depuis le coin a
       if (Math.abs(levels[levels.length - 1].z - zCur) < Math.abs(levels[0].z - zCur)) lines = lines.reverse();
+      // éventail vertical à chaque position (face, puis nacelle inclinée vers le bas / le haut)
+      const FAN = { 1: [0], 2: [0, -30], 3: [15, 0, -30] }[P.facadeNacelle] || [0];
       const pts = [];
-      lines.forEach((line, k) => pts.push(...(k % 2 ? line.slice().reverse() : line)));
+      lines.forEach((line, k) => {
+        const fwd = k % 2 ? line.slice().reverse() : line;
+        // passe de face (avec éventail sur les rangées horizontales)
+        pts.push(...fwd.map((p) => (p.pitch === 0 ? { ...p, shots: FAN } : p)));
+        if (P.facadeObliques && line.length > 1) {
+          // retour puis aller avec le drone tourné de ±angle : vues obliques des reliefs, embrasures, angles
+          const A = P.facadeObliqueAngle;
+          const back = fwd.slice().reverse().map((p) => ({ ...p, yaw: (p.yaw + A + 360) % 360, tag: p.tag + 'g' }));
+          const again = fwd.map((p) => ({ ...p, yaw: (p.yaw - A + 360) % 360, tag: p.tag + 'd' }));
+          pts.push(...back, ...again);
+        }
+      });
       if (pts.length) zCur = pts[pts.length - 1].z;
       if (skipped > nc * levels.length * 0.6) { mitoyens++; }
       else if (skipped) ignores += skipped;
@@ -259,30 +273,45 @@ export function plan(B, voisins, T, P0) {
     const hT = Math.max(P.marge + 2, distForGsd(P.gsdToit));
     const z = B.zt + hT;
     const fp = footprint(hT);
-    // orientation : plus long côté
+    // grille le long de l'axe u (lignes espacées selon w) ; décalage `sh` (m) opposé au regard pour les obliques
+    const grid = (u, w, pitch, fixedYaw, sh, tag) => {
+      const pr = ring.map((p) => [p[0] * u[0] + p[1] * u[1], p[0] * w[0] + p[1] * w[1]]);
+      const [umin, umax] = [Math.min(...pr.map((p) => p[0])), Math.max(...pr.map((p) => p[0]))];
+      const [wmin, wmax] = [Math.min(...pr.map((p) => p[1])), Math.max(...pr.map((p) => p[1]))];
+      const along = fp.h * (1 - P.ovToitAvant / 100), across = fp.w * (1 - P.ovToitLat / 100);
+      const bu = fp.h * 0.3, bw = fp.w * 0.3;
+      const nl = Math.max(1, Math.ceil((wmax - wmin + 2 * bw - fp.w) / across) + 1);
+      const nu = Math.max(2, Math.ceil((umax - umin + 2 * bu) / along) + 1);
+      const out = [];
+      for (let l = 0; l < nl; l++) {
+        const wv = nl === 1 ? (wmin + wmax) / 2 : wmin - bw + fp.w / 2 + ((wmax - wmin + 2 * bw - fp.w) * l) / (nl - 1);
+        const line = [];
+        for (let j = 0; j < nu; j++) {
+          const uv = umin - bu + ((umax - umin + 2 * bu) * j) / (nu - 1);
+          let p = add(mul(u, uv), mul(w, wv));
+          if (sh) p = sub(p, mul(sh.dir, sh.d));
+          line.push({ x: p[0], y: p[1], z, yaw: fixedYaw ?? yawOf(l % 2 ? mul(u, -1) : u), pitch, photo: true, tag });
+        }
+        if (l % 2) line.reverse();
+        out.push(...line);
+      }
+      return out;
+    };
     let best = 0, ang = 0;
     for (let i = 0; i < ring.length; i++) { const v = sub(ring[(i + 1) % ring.length], ring[i]); if (len(v) > best) { best = len(v); ang = Math.atan2(v[1], v[0]); } }
     const u = [Math.cos(ang), Math.sin(ang)], w = [-u[1], u[0]];
-    const pr = ring.map((p) => [p[0] * u[0] + p[1] * u[1], p[0] * w[0] + p[1] * w[1]]);
-    const [umin, umax] = [Math.min(...pr.map((p) => p[0])), Math.max(...pr.map((p) => p[0]))];
-    const [wmin, wmax] = [Math.min(...pr.map((p) => p[1])), Math.max(...pr.map((p) => p[1]))];
-    const along = fp.h * (1 - P.ovToitAvant / 100), across = fp.w * (1 - P.ovToitLat / 100);
-    const bu = fp.h * 0.3, bw = fp.w * 0.3;
-    const nl = Math.max(1, Math.ceil((wmax - wmin + 2 * bw - fp.w) / across) + 1);
-    const nu = Math.max(2, Math.ceil((umax - umin + 2 * bu) / along) + 1);
-    const pts = [];
-    for (let l = 0; l < nl; l++) {
-      const wv = nl === 1 ? (wmin + wmax) / 2 : wmin - bw + fp.w / 2 + ((wmax - wmin + 2 * bw - fp.w) * l) / (nl - 1);
-      const line = [];
-      for (let j = 0; j < nu; j++) {
-        const uv = umin - bu + ((umax - umin + 2 * bu) * j) / (nu - 1);
-        const p = add(mul(u, uv), mul(w, wv));
-        line.push({ x: p[0], y: p[1], z, yaw: yawOf(l % 2 ? mul(u, -1) : u), pitch: -90, photo: true, tag: 'T' });
-      }
-      if (l % 2) line.reverse();
-      pts.push(...line);
+    const pts = grid(u, w, -90, null, null, 'T');
+    if (P.toitCroise) pts.push(...grid(w, mul(u, -1), -90, null, null, 'Tx'));
+    groups.push({ nom: `Toiture${P.toitCroise ? ' croisée' : ''} · ${Math.round(z - T.z)} m`, type: 'toit', pts });
+    if (P.toitObliques) {
+      // 4 passes obliques : regard selon ±u et ±w, positions reculées pour viser le toit
+      const op = Math.max(-80, Math.min(-30, P.toitObliquePitch));
+      const d = hT / Math.tan((-op * Math.PI) / 180);
+      const opts = [[u, w], [mul(u, -1), w], [w, mul(u, -1)], [mul(w, -1), u]];
+      const ob = [];
+      opts.forEach(([dir, perp], k) => ob.push(...grid(dir, perp, Math.round(op), yawOf(dir), { dir, d }, 'To' + (k + 1))));
+      groups.push({ nom: `Toiture oblique ${Math.round(op)}° · 4 directions`, type: 'toit', pts: ob });
     }
-    groups.push({ nom: `Toiture · ${Math.round(z - T.z)} m`, type: 'toit', pts });
   }
 
   // ---- enchaînement : toiture, orbites (haut → bas), façades ; transitions par le haut si nécessaire
@@ -331,15 +360,15 @@ export function plan(B, voisins, T, P0) {
   let L = 0;
   for (let i = 1; i < wps.length; i++) L += Math.hypot(wps[i].x - wps[i - 1].x, wps[i].y - wps[i - 1].y, wps[i].z - wps[i - 1].z);
   L += Math.hypot(wps[0].x - T.x, wps[0].y - T.y, wps[0].z - T.z) + Math.hypot(last.x - T.x, last.y - T.y, last.z - T.z);
-  const photos = wps.filter((w) => w.photo).length;
-  const duree = L / P.vitesse + wps.length * 2.5 + photos * 1.5;
+  const photos = wps.reduce((n, w) => n + (w.photo ? (w.shots ? w.shots.length : 1) : 0), 0);
+  const duree = L / P.vitesse + wps.filter((w) => w.photo).length * 2.5 + photos * 1.5 + wps.filter((w) => !w.photo).length * 1.5;
   const hMax = Math.max(...wps.map((w) => w.z)) - T.z;
   if (hMax > 120) alertes.push(`Hauteur maximale ${Math.round(hMax)} m au-dessus du décollage : au-delà de 120 m (catégorie ouverte)`);
   if (wps.some((w) => w.z - T.z < 2)) alertes.push('Des points sont sous le niveau du décollage : vérifier l\'altitude du point de décollage');
   const parts = Math.ceil(wps.length / P.maxParMission);
   if (parts > 1) alertes.push(`${wps.length} points : mission découpée en ${parts} fichiers (${P.maxParMission} points max chacun)`);
   return {
-    P, wps, groups: order.map((g) => ({ nom: g.nom, type: g.type, n: g.pts.filter((p) => p.photo).length })), zSafe,
+    P, wps, groups: order.map((g) => ({ nom: g.nom, type: g.type, n: g.pts.reduce((n, p) => n + (p.photo ? (p.shots ? p.shots.length : 1) : 0), 0) })), zSafe,
     stats: { dF, gsdF: gsdAt(dF), photos, points: wps.length, longueur: L, duree, hMax, parts, batteries: Math.ceil(duree / (25 * 60)) },
     alertes,
   };
