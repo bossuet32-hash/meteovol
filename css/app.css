@@ -141,3 +141,16 @@ ul.files .acts { margin-left: auto; }
 pre.notam-txt { white-space: pre-wrap; font: 12px/1.35 ui-monospace, Menlo, monospace; background: var(--bg); padding: 6px 8px; border-radius: 8px; margin: 4px 0; overflow-wrap: anywhere; }
 details.obst summary { cursor: pointer; color: var(--accent); margin: 6px 0; }
 .obst-ic { color: #e65100; font: 900 15px/16px sans-serif; text-align: center; text-shadow: 0 0 2px #fff, 0 0 2px #fff; }
+
+/* Vol 3D */
+.p3d-map { height: 55vh; }
+.p3d-tk { background: #2e7d32; color: #fff; border: 2px solid #fff; border-radius: 50%; font: 700 14px/24px sans-serif; text-align: center; box-shadow: 0 1px 4px rgba(0,0,0,.5); }
+.p3d-canvas { width: 100%; height: 340px; display: block; background: var(--bg); border-radius: 12px; border: 1px solid var(--line); touch-action: none; margin: 8px 0 4px; }
+.p3d-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 4px 0 8px; }
+.p3d-stats div { background: var(--bg); border-radius: 10px; padding: 6px; text-align: center; }
+.p3d-stats b { display: block; font-size: 18px; } .p3d-stats span { font-size: 11.5px; color: var(--muted); }
+ul.p3d-groups { list-style: none; padding: 0; margin: 4px 0; display: grid; grid-template-columns: 1fr 1fr; gap: 2px 10px; }
+ul.p3d-groups .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
+.p3d-chk { font-size: 14.5px; margin-right: 12px; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; }
+.p3d-chk input { width: auto; min-height: 0; margin: 0; }
+ol.p3d-steps { padding-left: 20px; } ol.p3d-steps li { margin: 4px 0; }

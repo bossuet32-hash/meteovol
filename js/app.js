@@ -6,6 +6,7 @@ import * as zones from './zones.js';
 import * as mission from './mission.js';
 import * as lieu from './lieu.js';
 import * as rtk from './rtk.js';
+import * as plan3d from './plan3d.js';
 
 const TABS = {
   lieu: { label: 'Lieu', icon: '⌖', mod: lieu },
@@ -13,6 +14,7 @@ const TABS = {
   bulletin: { label: 'Bulletin', icon: '☁︎', mod: bulletin },
   zones: { label: 'Zones', icon: '⬡', mod: zones },
   rtk: { label: 'RTK', icon: '◎', mod: rtk },
+  vol3d: { label: 'Vol 3D', icon: '⬢', mod: plan3d },
   missions: { label: 'Missions', icon: '▤', mod: mission },
   reglages: { label: 'Réglages', icon: '⚙︎', mod: { render: settingsView } },
 };
